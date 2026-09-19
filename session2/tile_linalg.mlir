@@ -34,6 +34,16 @@ module attributes {transform.with_named_sequence} {
       : (!transform.any_op) -> (!transform.any_op, !transform.any_op,
                                 !transform.any_op)
 
+    // matmul has a third loop, the k reduction, that [32, 32] left untiled.
+    // Match it by name -- matvec has no such loop -- and tile only that loop:
+    // a tile size of 0 leaves a loop alone, and there is one loop handle per
+    // non-zero size.
+    %matmul = transform.structured.match ops{["linalg.matmul"]} in %root
+      : (!transform.any_op) -> !transform.any_op
+    %tiled_k, %k_loop = transform.structured.tile_using_for %matmul
+      tile_sizes [0, 0, 32]
+      : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
+
     transform.yield
   }
 }
