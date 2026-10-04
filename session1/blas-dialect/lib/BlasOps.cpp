@@ -36,17 +36,18 @@ LogicalResult MatVecOp::verify() {
                          "matrix row count must match output vector size");
 }
 
-// TODO(exercise): write `LogicalResult MatMulOp::verify()` here, modelled on
-// MatVecOp::verify above. Your blas.matmul definition sets
-// `let hasVerifier = 1;`, so this function must exist. If you forget it the
-// plugin still builds (we link with -Wl,-z,undefs, because MLIR's own
-// symbols are resolved by mlir-opt at dlopen time) and then fails to load:
-//   mlir-opt: symbol lookup error: libBlasPlugin.so:
-//             undefined symbol: _ZN4blas8MatMulOp6verifyEv
-// That mangled name is blas::MatMulOp::verify().
-//
-// For `out[i, j] += sum_k a[i, k] * b[k, j]` there are three constraints,
-// one verifyDimsMatch call each:
-//   a.dim(1) == b.dim(0)     the reduction dimension
-//   a.dim(0) == out.dim(0)   rows
-//   b.dim(1) == out.dim(1)   columns
+// SOLUTION: verifier for blas.matmul.
+LogicalResult MatMulOp::verify() {
+  auto aType = cast<MemRefType>(getA().getType());
+  auto bType = cast<MemRefType>(getB().getType());
+  auto outType = cast<MemRefType>(getOut().getType());
+
+  if (failed(verifyDimsMatch(*this, aType.getDimSize(1), bType.getDimSize(0),
+                             "inner dimensions must match")))
+    return failure();
+  if (failed(verifyDimsMatch(*this, aType.getDimSize(0), outType.getDimSize(0),
+                             "row count of 'a' must match row count of 'out'")))
+    return failure();
+  return verifyDimsMatch(*this, bType.getDimSize(1), outType.getDimSize(1),
+                         "column count of 'b' must match column count of 'out'");
+}

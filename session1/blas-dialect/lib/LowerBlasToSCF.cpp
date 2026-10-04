@@ -95,59 +95,70 @@ struct MatVecToSCFPattern : public OpRewritePattern<MatVecOp> {
   }
 };
 
-// TODO(exercise): uncomment this pattern, write the loop nest where it says
-// so, and register it in runOnOperation() below. It is commented out so the
-// plugin builds before blas.matmul exists -- Part 1 defines the op first, and
-// this is the step after that.
-//
-// The scaffolding is done: the operands, the index constants, the problem
-// sizes, and the eraseOp that retires the op once it has been rewritten.
-// What is missing is the nest, modelled on MatVecToSCFPattern above:
-//
-//   scf.for %i = 0 to M {
-//     scf.for %j = 0 to N {
-//       %init = memref.load %out[%i, %j]
-//       %acc = scf.for %k = 0 to K iter_args(%s = %init) {
-//         scf.yield %s + %a[%i, %k] * %b[%k, %j]
-//       }
-//       memref.store %acc, %out[%i, %j]
-//     }
-//   }
-//
-// The terminator rule from MatVecToSCFPattern applies here too: a loop with no
-// iter_args gets its scf.yield for free, the reduction loop does not.
-//
-// struct MatMulToSCFPattern : public OpRewritePattern<MatMulOp> {
-//   using OpRewritePattern::OpRewritePattern;
-//
-//   LogicalResult matchAndRewrite(MatMulOp op,
-//                                 PatternRewriter &rewriter) const override {
-//     Location loc = op.getLoc();
-//     Value a = op.getA();
-//     Value b = op.getB();
-//     Value out = op.getOut();
-//
-//     Value c0 = arith::ConstantIndexOp::create(rewriter, loc, 0);
-//     Value c1 = arith::ConstantIndexOp::create(rewriter, loc, 1);
-//     Value M = memref::DimOp::create(rewriter, loc, a, c0);
-//     Value K = memref::DimOp::create(rewriter, loc, a, c1);
-//     Value N = memref::DimOp::create(rewriter, loc, b, c1);
-//
-//     ... your loop nest here ...
-//
-//     rewriter.eraseOp(op);
-//     return success();
-//   }
-// };
+struct MatMulToSCFPattern : public OpRewritePattern<MatMulOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(MatMulOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value a = op.getA();
+    Value b = op.getB();
+    Value out = op.getOut();
+
+    Value c0 = arith::ConstantIndexOp::create(rewriter, loc, 0);
+    Value c1 = arith::ConstantIndexOp::create(rewriter, loc, 1);
+    Value M = memref::DimOp::create(rewriter, loc, a, c0);
+    Value K = memref::DimOp::create(rewriter, loc, a, c1);
+    Value N = memref::DimOp::create(rewriter, loc, b, c1);
+
+    auto rowLoop = scf::ForOp::create(rewriter, loc, c0, M, c1);
+    {
+      OpBuilder::InsertionGuard rowGuard(rewriter);
+      rewriter.setInsertionPointToStart(rowLoop.getBody());
+      Value i = rowLoop.getInductionVar();
+
+      auto colLoop = scf::ForOp::create(rewriter, loc, c0, N, c1);
+      {
+        OpBuilder::InsertionGuard colGuard(rewriter);
+        rewriter.setInsertionPointToStart(colLoop.getBody());
+        Value j = colLoop.getInductionVar();
+
+        Value init =
+            memref::LoadOp::create(rewriter, loc, out, ValueRange{i, j});
+
+        auto redLoop = scf::ForOp::create(rewriter, loc, c0, K, c1,
+                                          ValueRange{init});
+        {
+          OpBuilder::InsertionGuard redGuard(rewriter);
+          rewriter.setInsertionPointToStart(redLoop.getBody());
+          Value k = redLoop.getInductionVar();
+          Value acc = redLoop.getRegionIterArgs()[0];
+
+          Value aElem =
+              memref::LoadOp::create(rewriter, loc, a, ValueRange{i, k});
+          Value bElem =
+              memref::LoadOp::create(rewriter, loc, b, ValueRange{k, j});
+          Value prod = arith::MulFOp::create(rewriter, loc, aElem, bElem);
+          Value sum = arith::AddFOp::create(rewriter, loc, acc, prod);
+          scf::YieldOp::create(rewriter, loc, ValueRange{sum});
+        }
+
+        memref::StoreOp::create(rewriter, loc, redLoop.getResult(0), out,
+                                ValueRange{i, j});
+      }
+    }
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
 
 
 struct LowerBlasToSCFPass
     : public blas::impl::LowerBlasToSCFPassBase<LowerBlasToSCFPass> {
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
-    patterns.add<MatVecToSCFPattern>(&getContext());
-    // TODO(exercise): register your pattern too:
-    //   patterns.add<MatMulToSCFPattern>(&getContext());
+    patterns.add<MatVecToSCFPattern, MatMulToSCFPattern>(&getContext());
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();
