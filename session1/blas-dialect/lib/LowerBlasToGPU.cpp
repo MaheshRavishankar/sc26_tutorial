@@ -109,64 +109,86 @@ struct MatVecToGPUPattern : public OpRewritePattern<MatVecOp> {
   }
 };
 
-// TODO(exercise): uncomment this pattern, build the gpu.launch where it says
-// so, and register it in runOnOperation() below. It is commented out so the
-// plugin builds before blas.matmul exists -- Part 1 defines the op, and this
-// notebook clones the branch where that is already done.
-//
-// The scaffolding is done: the operands, the memref.cast + gpu.host_register
-// calls that make the buffers reachable from the device, the index constants,
-// the problem sizes, and the eraseOp at the end. What is missing is the
-// launch. One block, one thread per output *element*: thread (ty, tx)
-// computes
-//
-//   out[row, col] += sum_k a[row, k] * b[k, col]
-//
-// where row = by * blockDim.y + ty and col = bx * blockDim.x + tx, built the
-// way MatVecToGPUPattern above builds its row. So it wants N threads in x and
-// M in y -- the 2D grid from step 1 of this notebook. MatVecToGPUPattern is
-// the same thing with a 1D grid. Finish the launch body with
-// gpu::TerminatorOp.
-//
-// struct MatMulToGPUPattern : public OpRewritePattern<MatMulOp> {
-//   using OpRewritePattern::OpRewritePattern;
-//
-//   LogicalResult matchAndRewrite(MatMulOp op,
-//                                 PatternRewriter &rewriter) const override {
-//     Location loc = op.getLoc();
-//     Value a = op.getA();
-//     Value b = op.getB();
-//     Value out = op.getOut();
-//
-//     auto unrankedF32 = UnrankedMemRefType::get(rewriter.getF32Type(), 0);
-//     Value aU = memref::CastOp::create(rewriter, loc, unrankedF32, a);
-//     Value bU = memref::CastOp::create(rewriter, loc, unrankedF32, b);
-//     Value outU = memref::CastOp::create(rewriter, loc, unrankedF32, out);
-//     gpu::HostRegisterOp::create(rewriter, loc, aU);
-//     gpu::HostRegisterOp::create(rewriter, loc, bU);
-//     gpu::HostRegisterOp::create(rewriter, loc, outU);
-//
-//     Value c0 = arith::ConstantIndexOp::create(rewriter, loc, 0);
-//     Value c1 = arith::ConstantIndexOp::create(rewriter, loc, 1);
-//     Value M = memref::DimOp::create(rewriter, loc, a, c0);
-//     Value K = memref::DimOp::create(rewriter, loc, a, c1);
-//     Value N = memref::DimOp::create(rewriter, loc, b, c1);
-//
-//     ... your gpu.launch here ...
-//
-//     rewriter.eraseOp(op);
-//     return success();
-//   }
-// };
+struct MatMulToGPUPattern : public OpRewritePattern<MatMulOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(MatMulOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value a = op.getA();
+    Value b = op.getB();
+    Value out = op.getOut();
+
+    auto unrankedF32 = UnrankedMemRefType::get(rewriter.getF32Type(), 0);
+    Value aU = memref::CastOp::create(rewriter, loc, unrankedF32, a);
+    Value bU = memref::CastOp::create(rewriter, loc, unrankedF32, b);
+    Value outU = memref::CastOp::create(rewriter, loc, unrankedF32, out);
+    gpu::HostRegisterOp::create(rewriter, loc, aU);
+    gpu::HostRegisterOp::create(rewriter, loc, bU);
+    gpu::HostRegisterOp::create(rewriter, loc, outU);
+
+    Value c0 = arith::ConstantIndexOp::create(rewriter, loc, 0);
+    Value c1 = arith::ConstantIndexOp::create(rewriter, loc, 1);
+    Value M = memref::DimOp::create(rewriter, loc, a, c0);
+    Value K = memref::DimOp::create(rewriter, loc, a, c1);
+    Value N = memref::DimOp::create(rewriter, loc, b, c1);
+
+    // Threads: x over the columns of `out`, y over its rows.
+    auto launchOp = gpu::LaunchOp::create(rewriter, loc, c1, c1, c1, N,
+                                          M, c1);
+    {
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPointToStart(&launchOp.getBody().front());
+      Value by = launchOp.getBlockIds().y;
+      Value bx = launchOp.getBlockIds().x;
+      Value blockDimY = launchOp.getBlockSize().y;
+      Value blockDimX = launchOp.getBlockSize().x;
+      Value ty = launchOp.getThreadIds().y;
+      Value tx = launchOp.getThreadIds().x;
+
+      // The global row and column, built as MatVecToGPUPattern builds its
+      // row: blockIdx * blockDim + threadIdx, from y and from x.
+      Value rowBase = arith::MulIOp::create(rewriter, loc, by, blockDimY);
+      Value row = arith::AddIOp::create(rewriter, loc, rowBase, ty);
+      Value colBase = arith::MulIOp::create(rewriter, loc, bx, blockDimX);
+      Value col = arith::AddIOp::create(rewriter, loc, colBase, tx);
+
+      Value init =
+          memref::LoadOp::create(rewriter, loc, out, ValueRange{row, col});
+
+      auto redLoop =
+          scf::ForOp::create(rewriter, loc, c0, K, c1, ValueRange{init});
+      {
+        OpBuilder::InsertionGuard innerGuard(rewriter);
+        rewriter.setInsertionPointToStart(redLoop.getBody());
+        Value k = redLoop.getInductionVar();
+        Value acc = redLoop.getRegionIterArgs()[0];
+
+        Value aElem =
+            memref::LoadOp::create(rewriter, loc, a, ValueRange{row, k});
+        Value bElem =
+            memref::LoadOp::create(rewriter, loc, b, ValueRange{k, col});
+        Value prod = arith::MulFOp::create(rewriter, loc, aElem, bElem);
+        Value sum = arith::AddFOp::create(rewriter, loc, acc, prod);
+        scf::YieldOp::create(rewriter, loc, ValueRange{sum});
+      }
+
+      memref::StoreOp::create(rewriter, loc, redLoop.getResult(0), out,
+                              ValueRange{row, col});
+      gpu::TerminatorOp::create(rewriter, loc);
+    }
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
 
 
 struct LowerBlasToGPUPass
     : public blas::impl::LowerBlasToGPUPassBase<LowerBlasToGPUPass> {
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
-    patterns.add<MatVecToGPUPattern>(&getContext());
-    // TODO(exercise): register your pattern too:
-    //   patterns.add<MatMulToGPUPattern>(&getContext());
+    patterns.add<MatVecToGPUPattern, MatMulToGPUPattern>(&getContext());
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();
