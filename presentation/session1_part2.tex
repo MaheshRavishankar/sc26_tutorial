@@ -1,0 +1,636 @@
+% SC26 MLIR tutorial -- Session 1, Part 2 (GPU). Presenter deck.
+%
+% Build:  make            (the deck PDF)
+% See presentation/README.md.
+\providecommand{\notesmode}{0}
+\documentclass[aspectratio=169,10pt]{beamer}
+\usepackage{sc26}
+\ifnum\notesmode=1 \setbeameroption{show notes}\fi
+
+\title{Introduction to MLIR}
+\subtitle{Session 1, Part 2 --- GPU}
+\author{SC26 Tutorial}
+\date{}
+
+\begin{document}
+
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+\note{Pre-run setup cells 0--7 of the walkthrough notebook on a T4 runtime
+before the room fills: the toolchain download and the first plugin build are
+the slowest things in this part and neither teaches anything.
+
+One exercise in this part, the GPU lowering: about 10 minutes of keyboard
+time. Step 1 is a kernel you walk through; nobody types anything in it.}
+
+% =======================================================================
+\begin{frame}{Setup}
+  \begin{itemize}
+    \item<1-> \textbf{Switch the runtime to a GPU:}
+      \cd{Change runtime type $\to$ T4 GPU}, before running any cell.
+    \item<2-> \textbf{Fresh runtime.} Nothing from Part 1 carries
+      over, so the notebook downloads the toolchain and builds the plugin
+      again.
+    \item<3-> \textbf{We start from the Part 1 solution.} The notebook clones the
+      \cd{session1-part1-solution} branch, where \cd{blas.matmul} is already
+      defined. Nothing to re-type.
+    \item<4-> \textbf{One exercise:} GPU lowering.
+  \end{itemize}
+\end{frame}
+\note{Change runtime type is under the Runtime menu, or the arrow next to
+Connect at the top right. Ctrl+F8 (run every cell above) still works if
+someone loses their place.}
+
+% =======================================================================
+\begin{frame}{GPU Lowering}
+  \begin{center}
+  \begin{tikzpicture}[
+      box/.style={draw=scblue,fill=scwash,rounded corners=2pt,inner sep=5pt,
+                  font=\ttfamily\scriptsize,minimum height=2.4em,align=center},
+      lbl/.style={font=\scriptsize\itshape,color=scgrey,align=center},
+      arr/.style={-{Stealth[length=2mm]},draw=scgrey,thick}]
+
+    \node[box,draw=scaccent] (op) at (0,0) {blas.matmul};
+    \node[box] (scf) at (4.6,1.0) {scf.for nest};
+    \node[box] (cpu) at (10.6,1.0) {JIT + run\\\normalfont\itshape CPU};
+    \draw[arr] (op) -- node[lbl,above left=-2pt and -8pt]
+      {convert-blas-to-scf\\Part 1} (scf);
+    \draw[arr] (scf) -- node[lbl,above]{7 passes} (cpu);
+
+    \visible<2->{
+      \node[box,draw=scaccent] (gpu) at (4.6,-1.0) {gpu.launch kernel};
+      \node[box] (t4) at (10.6,-1.0) {JIT + run\\\normalfont\itshape T4 GPU};
+      \draw[arr,draw=scaccent] (op) -- node[lbl,below left=-2pt and -8pt]
+        {convert-blas-to-gpu\\\emph{this part}} (gpu);
+      \draw[arr] (gpu) -- node[lbl,below]{gpu-lower-to-nvvm-pipeline} (t4);
+    }
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<1-> In Part 1, we lowered \cd{blas.matmul} to loops and ran it on
+      the CPU.
+    \item<2-> In this part, we lower the \alert{same op} to a \cd{gpu.launch}
+      kernel and run it on a GPU.
+    \item<3-> First we read that kernel written by hand, so you know what
+      your pattern has to build.
+  \end{itemize}
+\end{frame}
+\note{The op definition and its verifier do not change at all. Everything in
+this part is a second pattern in a second pass.}
+
+% =======================================================================
+\section{Step 1 --- Loop-Level GPU Kernel}
+\begin{frame}[plain]\sectionpage\end{frame}
+
+\begin{frame}{Blocks and Threads}
+  \begin{center}
+  \begin{tikzpicture}[
+      blk/.style={draw=scblue,fill=scwash,minimum width=1.25cm,
+                  minimum height=0.8cm,font=\ttfamily\scriptsize},
+      thr/.style={draw=scaccent,fill=white,minimum size=0.42cm,inner sep=0pt},
+      lbl/.style={font=\scriptsize,color=scink}]
+
+    \foreach \x in {0,1,2} {
+      \foreach \y in {0,1} {
+        \node[blk] (b\x\y) at (\x*1.4, -\y*0.95) {(\y, \x)};
+      }
+    }
+    \node[lbl,above=0.15cm of b10] {a grid of blocks --- \cd{blockIdx} as (y, x)};
+
+    \visible<2->{
+      \foreach \x in {0,...,4} {
+        \foreach \y in {0,...,3} {
+          \node[thr] (t\x\y) at (6.4+\x*0.48, 0.25-\y*0.48) {};
+        }
+      }
+      \node[lbl,above=0.15cm of t20] {one block of threads --- \cd{threadIdx}};
+      \draw[scgrey,dashed] (b20.north east) -- (t00.north west);
+      \draw[scgrey,dashed] (b20.south east) -- (t03.south west);
+      \draw[-{Stealth[length=1.5mm]},scgrey] (6.15,-1.6) -- (8.45,-1.6)
+        node[below,font=\scriptsize]{x};
+      \draw[-{Stealth[length=1.5mm]},scgrey] (8.8,0.45) -- (8.8,-1.35)
+        node[right,font=\scriptsize]{y};
+    }
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.4em}
+  \begin{itemize}
+    \item<1-> A kernel runs the \alert{same body} on many threads at once.
+    \item<2-> Threads are grouped into \alert{blocks}, and blocks into a
+      \alert{grid}. Each can be up to 3D: x, y and z.
+    \item<3-> Every thread knows its \cd{blockIdx}, its \cd{threadIdx} and the
+      block size, \cd{blockDim}. Its global position in each dimension is
+      \cd{blockIdx * blockDim + threadIdx}.
+  \end{itemize}
+\end{frame}
+\note{This is the CUDA model, and the gpu dialect uses it as is. Our kernel
+is the simplest case: one block, so blockIdx is always zero and threadIdx
+alone says which element a thread computes.}
+
+% =======================================================================
+\begin{frame}[fragile]{\cd{gpu.launch}}
+\begin{lstlisting}[language=mlir]
+(@\lkw{gpu.launch} \hl<4>{blocks(\%bx, \%by, \%bz)} \hl<2>{in (\%gridX = \%c1, \%gridY = \%c1, \%gridZ = \%c1)}@)
+           (@\hl<4>{threads(\%tx, \%ty, \%tz)} \hl<3>{in (\%blockX = \%c5, \%blockY = \%c4, \%blockZ = \%c1)} \{@)
+  (@\hl<5>{\lcm{// the body: run once by every thread}}@)
+  (@\hl<5>{\lkw{gpu.terminator}}@)
+}
+\end{lstlisting}
+  \vspace{0.4em}
+  \begin{itemize}
+    \item<2-> \cd{blocks(...) in (...)}: how many blocks, in x, y and z. Here,
+      one.
+    \item<3-> \cd{threads(...) in (...)}: how many threads in each block. Here
+      5 $\times$ 4 = 20. Inside the body \cd{\%blockX, \%blockY, \%blockZ}
+      name those sizes: \cd{blockDim}.
+    \item<4-> \cd{\%bx, \%by, \%bz} and \cd{\%tx, \%ty, \%tz} are bound inside
+      the body: the block and thread ids, CUDA's \cd{blockIdx} and
+      \cd{threadIdx}.
+    \item<5-> Every thread runs the body, and \cd{gpu.terminator} ends it.
+  \end{itemize}
+\end{frame}
+\note{The sizes are ordinary index values, so a pattern can compute them --
+which is exactly what the one in step 2 does, from the shapes of the
+operands.}
+
+% =======================================================================
+\begin{frame}[fragile]{\cd{matmul\_gpu.mlir}, Step 1 of 2 --- Launch}
+\begin{lstlisting}[language=mlir]
+func.func @matmul(%a: memref<4x3xf32>, %b: memref<3x5xf32>,
+                  %out: memref<4x5xf32>) {
+  (@\hl<2>{\%a\_u = \lkw{memref.cast} \%a : \lkw{memref}<4x3xf32> \lkw{to} \lkw{memref}<*xf32>}@)
+  (@\hl<2>{\%b\_u = \lkw{memref.cast} \%b : \lkw{memref}<3x5xf32> \lkw{to} \lkw{memref}<*xf32>}@)
+  (@\hl<2>{\%out\_u = \lkw{memref.cast} \%out : \lkw{memref}<4x5xf32> \lkw{to} \lkw{memref}<*xf32>}@)
+  (@\hl<2>{\lkw{gpu.host\_register} \%a\_u : \lkw{memref}<*xf32>}@)
+  (@\hl<2>{\lkw{gpu.host\_register} \%b\_u : \lkw{memref}<*xf32>}@)
+  (@\hl<2>{\lkw{gpu.host\_register} \%out\_u : \lkw{memref}<*xf32>}@)
+  %c1 = arith.constant 1 : index
+  %c3 = arith.constant 3 : index
+  %c4 = arith.constant 4 : index
+  %c5 = arith.constant 5 : index
+  (@\hl<3>{\lkw{gpu.launch} blocks(\%bx, \%by, \%bz) in (\%gridX = \%c1, \%gridY = \%c1, \%gridZ = \%c1)}@)
+             (@\hl<3>{threads(\%tx, \%ty, \%tz) in (\%blockX = \%c5, \%blockY = \%c4, \%blockZ = \%c1) \{}@)
+    // the body: next slides
+    gpu.terminator
+  }
+  return
+}
+\end{lstlisting}
+  \vspace{0.2em}
+  \begin{itemize}
+    \item<2-> The \cd{memref.cast} + \cd{gpu.host\_register} lines make the
+      host buffers reachable from the GPU.
+    \item<3-> One block of 5 $\times$ 4 threads: one thread per element of the
+      4 $\times$ 5 \cd{out}.
+  \end{itemize}
+\end{frame}
+\note{session1/matmul\_gpu.mlir ships complete. The cast to an unranked memref
+is only because gpu.host\_register takes one. If someone asks what happens
+without the registration: on some GPU and driver setups the kernel silently
+reads and writes garbage rather than faulting.}
+
+% =======================================================================
+\begin{frame}{Thread to Element Mapping}
+  \begin{center}
+  \begin{tikzpicture}[
+      cell/.style={draw=scblue,fill=scwash,minimum width=1.15cm,
+                   minimum height=0.55cm,font=\ttfamily\scriptsize},
+      hdr/.style={font=\ttfamily\scriptsize,color=scaccent}]
+    \foreach \c in {0,...,4} {
+      \node[hdr] at (\c*1.25, 0.55) {tx = \c};
+      \foreach \r in {0,...,3} {
+        \node[cell] at (\c*1.25, -\r*0.65) {(\r, \c)};
+      }
+    }
+    \foreach \r in {0,...,3} {
+      \node[hdr,anchor=east] at (-0.75, -\r*0.65) {ty = \r};
+    }
+    \node[font=\scriptsize,color=scgrey,anchor=west] at (6.0, -0.98)
+      {\cd{out}, 4 $\times$ 5: each cell is};
+    \node[font=\scriptsize,color=scgrey,anchor=west] at (6.0, -1.33)
+      {the thread \cd{(ty, tx)} that computes it};
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.5em}
+  \begin{itemize}
+    \item<2-> y spans the 4 rows of \cd{out}, x its 5 columns. Each thread
+      computes one element of the output.
+  \end{itemize}
+\end{frame}
+\note{The coalescing argument, without timing (Colab timings are noise):
+memrefs are row-major, so out[i, j] and b[k, j] are contiguous in j. A warp
+is 32 threads with consecutive threadIdx.x. With x on the columns those lanes
+touch adjacent floats, one memory transaction; with x on the rows each lane
+is a whole row away, one transaction per lane. Session 2 Part 2 comes back to
+this when a pass picks the mapping instead.}
+
+% =======================================================================
+\begin{frame}[fragile]{\cd{matmul\_gpu.mlir}, Step 2 of 2 --- Body}
+\begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.4}{7.6}\selectfont]
+gpu.launch blocks(%bx, %by, %bz) ... threads(%tx, %ty, %tz) ... {
+  (@\hl<2>{\%rowBase = \lkw{arith.muli} \%by, \%blockY : \lkw{index}}@)
+  (@\hl<2>{\%row = \lkw{arith.addi} \%rowBase, \%ty : \lkw{index}}@)
+  (@\hl<2>{\%colBase = \lkw{arith.muli} \%bx, \%blockX : \lkw{index}}@)
+  (@\hl<2>{\%col = \lkw{arith.addi} \%colBase, \%tx : \lkw{index}}@)
+  %c0 = arith.constant 0 : index
+  %step = arith.constant 1 : index
+  (@\hl<3>{\%init = \lkw{memref.load} \%out[\%row, \%col] : \lkw{memref}<4x5xf32>}@)
+  (@\hl<4>{\%acc = \lkw{scf.for} \%k = \%c0 \lkw{to} \%c3 \lkw{step} \%step \lkw{iter\_args}(\%s = \%init) -> (\lkw{f32}) \{}@)
+    (@\hl<4>{\%av = \lkw{memref.load} \%a[\%row, \%k] : \lkw{memref}<4x3xf32>}@)
+    (@\hl<4>{\%bv = \lkw{memref.load} \%b[\%k, \%col] : \lkw{memref}<3x5xf32>}@)
+    %prod = arith.mulf %av, %bv : f32
+    %s2 = arith.addf %s, %prod : f32
+    scf.yield %s2 : f32
+  }
+  (@\hl<3>{\lkw{memref.store} \%acc, \%out[\%row, \%col] : \lkw{memref}<4x5xf32>}@)
+  gpu.terminator
+}
+\end{lstlisting}
+  \vspace{0.2em}
+  \begin{itemize}
+    \item<2-> Global row and column: block id $\times$ block size + thread id.
+    \item<3-> Thread \cd{(\%ty, \%tx)} reads, accumulates and writes
+      \cd{out[\%row, \%col]}.
+    \item<4-> The reduction over \cd{\%k} is Part 1's loop, on row \cd{\%row}
+      of \cd{a} and column \cd{\%col} of \cd{b}.
+    \item<5-> No explicit loops in the code over rows and columns:
+      \alert{the 2D grid of threads spans those loops}.
+  \end{itemize}
+\end{frame}
+\note{The block-id terms are zero here, so this computes the same as indexing
+with \%ty and \%tx directly. It is written out because it is the general
+form: the same body is right for any number of blocks.}
+
+% =======================================================================
+\begin{frame}[fragile]{Lowering and Execution}
+\begin{lstlisting}[style=plain,basicstyle=\ttfamily\small]
+gpu-lower-to-nvvm-pipeline{cubin-chip=sm_75 cubin-format=bin
+                           cubin-features=+ptx78}
+\end{lstlisting}
+  \vspace{0.4em}
+  \begin{itemize}
+    \item<2-> Moves the launch body out into a separate kernel, lowers it to
+      NVVM, and compiles it to a binary for this GPU.
+    \item<3-> Rewrites the host side to launch that kernel through the CUDA
+      driver.
+    \item<4-> The JIT needs the CUDA runtime wrapper library in
+      \cd{shared\_libs}, and \cd{engine.initialize()} to load the compiled
+      kernel.
+  \end{itemize}
+  \vspace{0.4em}
+  \visible<5->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
+\end{frame}
+\note{The notebook reads the chip from nvidia-smi rather than hard-coding
+sm\_75, so it also works on whatever GPU Colab hands out.
+
+Without engine.initialize() every CUDA call fails with
+CUDA\_ERROR\_INVALID\_HANDLE: the compiled kernel is loaded by a global
+constructor that nothing else runs.}
+
+% =======================================================================
+\section{Step 2 --- Lowering \texttt{blas.matmul} to GPU}
+\begin{frame}[plain]\sectionpage\end{frame}
+
+\begin{frame}[fragile]{Reference: \cd{MatVecToGPUPattern}, Step 1 of 5 --- Setup}
+  \begin{columns}[t]
+    \begin{column}{0.59\textwidth}
+      \begin{center}\small\textbf{the C++}\end{center}
+\begin{lstlisting}[style=halfs,language=C++,morekeywords={LogicalResult,Value,Location,override,struct,public,using}]
+struct MatVecToGPUPattern : public OpRewritePattern<MatVecOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult
+  matchAndRewrite(MatVecOp op,
+                  PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value mat = op.getMat();
+    Value vec = op.getVec();
+    Value out = op.getOut();
+    (@\hl<2>{\lcm{// memref.cast + gpu::HostRegisterOp for mat, vec, out}}@)
+    Value c0 = arith::ConstantIndexOp::create(rewriter, loc, 0);
+    Value c1 = arith::ConstantIndexOp::create(rewriter, loc, 1);
+    Value numRows = memref::DimOp::create(rewriter, loc, mat, c0);
+    Value numCols = memref::DimOp::create(rewriter, loc, mat, c1);
+    // steps 2-4 go here
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+\end{lstlisting}
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \begin{center}\small\textbf{the IR it generates}\end{center}
+\begin{lstlisting}[style=halfs,language=mlir]
+(@\strut@)
+
+
+
+
+
+
+
+
+(@\hl<2>{\lcm{// memref.cast + gpu.host\_register}}@)
+%c0 = arith.constant 0 : index
+%c1 = arith.constant 1 : index
+%numRows = memref.dim %mat, %c0
+%numCols = memref.dim %mat, %c1
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<2-> \cd{MatVecToSCFPattern}'s start, plus step 1's host
+      registration (six lines, folded here).
+    \item<3-> In \cd{MatMulToGPUPattern} all of this is \alert{provided}. You
+      start below it.
+  \end{itemize}
+\end{frame}
+\note{\cd{blas-dialect/lib/LowerBlasToGPU.cpp}. MatVecToGPUPattern is complete
+in the file. As in Part 1, the right-hand side shows what the C++ builds; the
+pass's printed output folds the memref.dim ops to constants.}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: \cd{MatVecToGPUPattern}, Step 2 of 5 --- Launch}
+  {\small\textbf{the C++}}
+\begin{lstlisting}[language=C++,basicstyle=\ttfamily\fontsize{6}{7.2}\selectfont,morekeywords={auto,Value}]
+auto launchOp =
+    (@\hl<2>{gpu::LaunchOp::create(rewriter, loc, c1, c1, c1, numRows, c1, c1);}@)
+{
+  OpBuilder::InsertionGuard guard(rewriter);
+  (@\hl<3>{rewriter.setInsertionPointToStart(\&launchOp.getBody().front());}@)
+  (@\hl<4>{\lkw{Value} bx = launchOp.getBlockIds().x;}@)
+  (@\hl<4>{\lkw{Value} blockDimX = launchOp.getBlockSize().x;}@)
+  (@\hl<4>{\lkw{Value} tx = launchOp.getThreadIds().x;}@)
+  (@\hl<5>{\lkw{Value} rowBase = arith::MulIOp::create(rewriter, loc, bx, blockDimX);}@)
+  (@\hl<5>{\lkw{Value} row = arith::AddIOp::create(rewriter, loc, rowBase, tx);}@)
+  // steps 3 and 4 go here
+}
+\end{lstlisting}
+  {\small\textbf{the IR it generates}}
+\begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6}{7.2}\selectfont]
+(@\hl<2>{\lkw{gpu.launch} blocks(}\hl<2,4>{\%bx}\hl<2>{, \%by, \%bz) in (\%gridX = \%c1, \%gridY = \%c1, \%gridZ = \%c1)}@)
+           (@\hl<2>{threads(}\hl<2,4>{\%tx}\hl<2>{, \%ty, \%tz) in (}\hl<2,4>{\%blockX}\hl<2>{ = \%numRows, \%blockY = \%c1, \%blockZ = \%c1) \{}@)
+  (@\hl<5>{\%rowBase = \lkw{arith.muli} \%bx, \%blockX : \lkw{index}}@)
+  (@\hl<5>{\%row = \lkw{arith.addi} \%rowBase, \%tx : \lkw{index}}@)
+  (@\hl<3>{\lcm{// steps 3 and 4 go here}}@)
+}
+\end{lstlisting}
+  \vspace{0.1em}
+  \begin{itemize}
+    \item<2-> Grid size: \cd{(1, 1, 1)}, block size: \cd{(numRows, 1, 1)}.
+    \item<3-> The body is a region: move the insertion point into it, as with
+      Part 1's loops.
+    \item<4-> Then the block id, block size and thread id: \cd{bx},
+      \cd{blockDimX}, \cd{tx}.
+    \item<5-> From them the global row, \cd{bx * blockDim.x + tx}.
+  \end{itemize}
+\end{frame}
+\note{One thread per row of mat: the threads take the place of Part 1's row
+loop. Writing the row as block id times block size plus thread id is the
+canonical form; it is what makes the same pattern right when the launch uses
+more than one block.}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: \cd{MatVecToGPUPattern}, Step 3 of 5 --- Body}
+  \begin{columns}[t]
+    \begin{column}{0.59\textwidth}
+      \begin{center}\small\textbf{the C++}\end{center}
+\begin{lstlisting}[style=halfs,language=C++,morekeywords={auto,Value}]
+Value init = memref::LoadOp::create(rewriter, loc, out,
+                                    ValueRange{(@\df{row}@)});
+auto redLoop = scf::ForOp::create(rewriter, loc, c0, numCols, c1,
+                                  ValueRange{init});
+{
+  // the guard, the insertion point, j and acc: as in Part 1
+  Value matElem = memref::LoadOp::create(rewriter, loc, mat,
+                                         ValueRange{(@\df{row}@), j});
+  Value vecElem = memref::LoadOp::create(rewriter, loc, vec,
+                                         ValueRange{j});
+  // prod, sum and the yield: as in Part 1
+}
+\end{lstlisting}
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \begin{center}\small\textbf{the IR it generates}\end{center}
+\begin{lstlisting}[style=halfs,language=mlir]
+%init = memref.load %out[(@\df{\%row}@)]
+
+%acc = scf.for %j = %c0 to %numCols step %c1
+    iter_args(%a = %init) -> (f32) {
+
+  ...
+  %m = memref.load %mat[(@\df{\%row}@), %j]
+
+  %v = memref.load %vec[%j]
+
+  ...
+}
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+  \vspace{0.6em}
+  \begin{itemize}
+    \item<2-> This is \cd{MatVecToSCFPattern}'s body from Part 1, with the row
+      index replaced: \cd{row} where Part 1 had \cd{i}.
+    \item<3-> There is no row loop: \alert{the threads span the instances of the
+      row loop}.
+  \end{itemize}
+\end{frame}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: \cd{MatVecToGPUPattern}, Step 4 of 5 --- Finish the Body}
+  \begin{columns}[t]
+    \begin{column}{0.62\textwidth}
+      \begin{center}\small\textbf{the C++}\end{center}
+\begin{lstlisting}[style=halfs,language=C++,morekeywords={LogicalResult,auto,Value,override}]
+LogicalResult matchAndRewrite(MatVecOp op, ...) const override {
+  // step 1: operands, host registration, c0, c1, numRows, numCols
+  auto launchOp = gpu::LaunchOp::create(..., numRows, c1, c1);
+  {
+    // step 2: the insertion point, row = bx * blockDim.x + tx
+    Value init = memref::LoadOp::create(..., out, ValueRange{row});
+    auto redLoop = scf::ForOp::create(..., ValueRange{init});
+    {
+      // step 3: the reduction body
+    }
+    (@\df{memref::StoreOp::create(rewriter, loc, redLoop.getResult(0), out,}@)
+                            (@\df{ValueRange\{row\});}@)
+    (@\df{gpu::TerminatorOp::create(rewriter, loc);}@)
+  }
+  rewriter.eraseOp(op);
+  return success();
+}
+\end{lstlisting}
+    \end{column}
+    \begin{column}{0.37\textwidth}
+      \begin{center}\small\textbf{the IR it generates}\end{center}
+\begin{lstlisting}[style=halfs,language=mlir]
+(@\strut@)
+
+gpu.launch ... {
+
+
+  %init = memref.load %out[%row]
+  %acc = scf.for %j ... {
+
+    ...
+  }
+  (@\df{memref.store \%acc, \%out[\%row]}@)
+
+  (@\df{gpu.terminator}@)
+}
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+  \vspace{0.5em}
+  \begin{itemize}
+    \item<2-> The store is Part 1's, indexed by \cd{row}: after the reduction
+      loop, inside the launch body.
+    \item<3-> A launch body must end in \cd{gpu.terminator}, and nothing
+      creates it for you.
+  \end{itemize}
+\end{frame}
+\note{Unlike an scf.for without iter\_args, gpu::LaunchOp::create leaves the
+body without a terminator. Forget it and the verifier rejects the launch.}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: \cd{MatVecToGPUPattern}, Step 5 of 5 --- Registration}
+  \cd{LowerBlasToGPU.cpp}, the GPU pass:
+\begin{lstlisting}[language=C++,basicstyle=\ttfamily\scriptsize,morekeywords={void,override}]
+void runOnOperation() override {
+  RewritePatternSet patterns(&getContext());
+  (@\hl<2>{patterns.add<MatVecToGPUPattern>(\&getContext());}@)
+  // TODO(exercise): register your pattern too:
+  //   patterns.add<MatMulToGPUPattern>(&getContext());
+  ...
+}
+\end{lstlisting}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<2-> Registered exactly as in Part 1. Yours goes on the same line.
+  \end{itemize}
+\end{frame}
+
+% =======================================================================
+\begin{frame}{Exercise 5 --- Write the GPU Lowering for Matmul}
+  \begin{center}\large
+    \cd{MatMulToGPUPattern} in \cd{blas-dialect/lib/LowerBlasToGPU.cpp}
+  \end{center}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item \textbf{Provided}, commented out: the operands, the host
+      registration, \cd{c0}, \cd{c1}, \cd{M}, \cd{K}, \cd{N}, and the
+      \cd{eraseOp}. Uncomment it.
+    \item \textbf{You write} the \cd{gpu::LaunchOp::create} and its body ---
+      the load, the reduction loop, the store, the \cd{gpu::TerminatorOp} ---
+      then register the pattern.
+  \end{itemize}
+  \vspace{0.3em}
+  \textbf{What is different from matvec:}
+  \begin{itemize}
+    \item A 2D thread grid: \cd{N} threads in x (the columns of \cd{out}),
+      \cd{M} in y (its rows) --- the grid from step 1.
+    \item Two global indices: \cd{row} from the y ids and \cd{col} from the x
+      ids, each built the way matvec builds its \cd{row}.
+    \item The reduction runs over \cd{K}, reading \cd{a[row, k]} and
+      \cd{b[k, col]}, into \cd{out[row, col]}.
+  \end{itemize}
+  \vspace{0.4em}
+  \begin{center}\color{scaccent}\large
+    10 minutes to write it --- then we walk through the solution.
+  \end{center}
+\end{frame}
+\note{If you are behind schedule, type this one yourself and narrate.
+
+The check is the rebuild cell, then the cell that runs the pass and the one
+that runs its output on the GPU.}
+
+% =======================================================================
+\begin{frame}[fragile]{Solution --- \cd{MatMulToGPUPattern}, and What Changed from Matvec}
+\begin{lstlisting}[language=C++,morekeywords={auto,Value},basicstyle=\ttfamily\fontsize{6.6}{7.9}\selectfont]
+auto launchOp =        (@\only<2>{\color{scaccent}$\leftarrow$ a 2D grid: N threads in x, M in y}@)
+    gpu::LaunchOp::create(rewriter, loc, c1, c1, c1, (@\df{N, M}@), c1);
+{
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPointToStart(&launchOp.getBody().front());
+  // by, bx, blockDimY, blockDimX, ty, tx: as matvec gets bx, blockDimX, tx
+  Value rowBase = arith::MulIOp::create(rewriter, loc, (@\df{by, blockDimY}@));    (@\only<3>{\color{scaccent}$\leftarrow$ row from y}@)
+  Value row = arith::AddIOp::create(rewriter, loc, rowBase, (@\df{ty}@));
+  (@\df{Value colBase = arith::MulIOp::create(rewriter, loc, bx, blockDimX);}@)  (@\only<3>{\color{scaccent}$\leftarrow$ col from x}@)
+  (@\df{Value col = arith::AddIOp::create(rewriter, loc, colBase, tx);}@)
+
+  Value init =
+      memref::LoadOp::create(rewriter, loc, out, ValueRange{row(@\df{, col}@)});
+  auto redLoop =
+      scf::ForOp::create(rewriter, loc, c0, (@\df{K}@), c1, ValueRange{init});
+  {
+    // the guard, the insertion point, k and acc: as in matvec
+    Value aElem = memref::LoadOp::create(rewriter, loc, a, ValueRange{row, k});
+    Value bElem = memref::LoadOp::create(rewriter, loc, b, ValueRange{k(@\df{, col}@)});
+    // prod, sum and the yield: as in matvec
+  }
+  memref::StoreOp::create(rewriter, loc, redLoop.getResult(0), out,
+                          ValueRange{row(@\df{, col}@)});     (@\only<4>{\color{scaccent}$\leftarrow$ two indices}@)
+  gpu::TerminatorOp::create(rewriter, loc);
+}
+\end{lstlisting}
+\end{frame}
+\note{This goes where the scaffolding says "your gpu.launch here". Everything
+in black is the matvec pattern with the names changed; the orange is what is
+new. It generates the step 1 kernel: one block of N by M threads, and thread
+(ty, tx) computing out[row, col].}
+
+\begin{frame}[fragile]{Solution --- Register the Pattern}
+\begin{lstlisting}[language=C++,basicstyle=\ttfamily\scriptsize,morekeywords={void,override}]
+void runOnOperation() override {
+  RewritePatternSet patterns(&getContext());
+  patterns.add<MatVecToGPUPattern(@\df{, MatMulToGPUPattern}@)>(&getContext());
+  ...
+}
+\end{lstlisting}
+  \vspace{0.25em}
+  \begin{itemize}
+    \item<2-> Forget it and the pass stops with:
+  \end{itemize}
+  \vspace{0.3em}
+  \visible<2->{\errbox{error: convert-blas-to-gpu did not convert 'blas.matmul' -{}- is its pattern\\
+    written and registered in blas-dialect/lib/LowerBlasToGPU.cpp?}}
+\end{frame}
+
+% =======================================================================
+\begin{frame}{Recap}
+  \begin{center}
+  \begin{tikzpicture}[
+      box/.style={draw=scblue,fill=scwash,rounded corners=2pt,inner sep=5pt,
+                  font=\ttfamily\scriptsize,minimum height=2.4em,align=center},
+      lbl/.style={font=\scriptsize\itshape,color=scgrey,align=center},
+      arr/.style={-{Stealth[length=2mm]},draw=scgrey,thick}]
+
+    \node[box,draw=scaccent] (op) at (0,0) {blas.matmul};
+    \node[box] (scf) at (4.6,0.9) {scf.for nest};
+    \node[box] (cpu) at (10.6,0.9) {JIT + run\\\normalfont\itshape CPU};
+    \node[box,draw=scaccent] (gpu) at (4.6,-0.9) {gpu.launch kernel};
+    \node[box] (t4) at (10.6,-0.9) {JIT + run\\\normalfont\itshape T4 GPU};
+    \draw[arr] (op) -- node[lbl,above left=-2pt and -8pt]
+      {convert-blas-to-scf\\Part 1} (scf);
+    \draw[arr] (scf) -- node[lbl,above]{7 passes} (cpu);
+    \draw[arr,draw=scaccent] (op) -- node[lbl,below left=-2pt and -8pt]
+      {convert-blas-to-gpu\\this part} (gpu);
+    \draw[arr] (gpu) -- node[lbl,below]{gpu-lower-to-nvvm-pipeline} (t4);
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<2-> One op definition, \alert{two lowerings}: loops on the CPU in
+      Part 1, a kernel on the GPU in this part.
+    \item<3-> The pattern decides how the work maps onto the GPU: one thread
+      per output element, x on the columns.
+    \item<4-> It builds the kernel you read in step 1, and that runs through
+      the same GPU pipeline.
+  \end{itemize}
+\end{frame}
+\note{End here.}
+
+\end{document}

@@ -1,0 +1,124 @@
+% Shared look and code styling for the SC26 tutorial decks.
+\ProvidesPackage{sc26}
+
+\usepackage[T1]{fontenc}
+% Nimbus Sans + Nimbus Mono (psnfss). Real Type 1 fonts with T1 coverage, and
+% unlike Latin Modern they are in texlive-fonts-recommended, so the deck builds
+% from the minimal TeX Live install documented in README.md.
+\usepackage[scaled=0.92]{helvet}
+\usepackage{courier}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc,decorations.pathreplacing}
+
+% --- palette -------------------------------------------------------------
+\definecolor{scink}{HTML}{15202B}
+\definecolor{scblue}{HTML}{1F4E79}
+\definecolor{scaccent}{HTML}{C05621}
+\definecolor{scgreen}{HTML}{2F6F4E}
+\definecolor{scred}{HTML}{A4262C}
+\definecolor{scgrey}{HTML}{6B7785}
+\definecolor{scwash}{HTML}{F2F4F7}
+
+% --- beamer theme --------------------------------------------------------
+\usetheme{default}
+\usecolortheme{default}
+\setbeamertemplate{navigation symbols}{}
+\setbeamercolor{structure}{fg=scblue}
+\setbeamercolor{normal text}{fg=scink}
+\setbeamercolor{alerted text}{fg=scaccent}
+\setbeamercolor{frametitle}{fg=white,bg=scblue}
+\setbeamercolor{title}{fg=scblue}
+\setbeamerfont{frametitle}{size=\large,series=\bfseries}
+\setbeamerfont{title}{size=\LARGE,series=\bfseries}
+\setbeamertemplate{frametitle}{%
+  \nointerlineskip
+  \begin{beamercolorbox}[wd=\paperwidth,ht=3.2ex,dp=1.2ex,leftskip=0.3cm]{frametitle}
+    \usebeamerfont{frametitle}\insertframetitle
+  \end{beamercolorbox}}
+\setbeamertemplate{footline}{%
+  \hfill\usebeamerfont{footline}\color{scgrey}\scriptsize
+  \insertframenumber\hspace{0.4cm}\vspace{0.2cm}}
+\setbeamertemplate{section page}{%
+  \begin{centering}
+    {\usebeamerfont{title}\color{scblue}\insertsection}\\[0.4em]
+    {\color{scgrey}\insertsubsection}
+  \end{centering}}
+\setbeamertemplate{itemize item}{\color{scaccent}\scriptsize$\blacksquare$}
+\setbeamertemplate{itemize subitem}{\color{scgrey}\scriptsize$\square$}
+
+% --- code ---------------------------------------------------------------
+\lstdefinelanguage{mlir}{
+  morekeywords={func,func.func,return,module,scf,scf.for,scf.yield,scf.forall,
+    memref,memref.load,memref.store,memref.dim,memref.cast,arith,
+    arith.constant,arith.mulf,arith.addf,arith.muli,arith.addi,blas.matmul,blas.matvec,
+    linalg.matmul,gpu.launch,gpu.host_register,gpu.terminator,llvm.br,llvm.cond_br,
+    llvm.getelementptr,llvm.func,iter_args,step,to,index,f32,
+    linalg.matvec,linalg.generic,linalg.yield,memref.subview,affine_map,
+    transform.named_sequence,transform.structured.match,
+    transform.structured.tile_using_for,transform.yield,
+    transform.structured.tile_using_forall,scf.parallel,affine.apply,
+    transform.gpu.map_forall_to_blocks,transform.gpu.map_nested_forall_to_threads,
+    gpu.block_id,gpu.thread_id},
+  morekeywords=[2]{memref,index,f32,i32},
+  sensitive=true,
+  morecomment=[l]{//},
+  morestring=[b]",
+  alsoletter={.},
+}
+\lstdefinelanguage{ods}{
+  morekeywords={def,let,class,ins,outs,dag},
+  morekeywords=[2]{MemRefRankOf,F32,Blas_Op,Blas_MatMulOp,Blas_MatVecOp},
+  sensitive=true,
+  morecomment=[l]{//},
+  morestring=[b]",
+  alsoletter={_},
+}
+\lstdefinestyle{sc}{
+  basicstyle=\ttfamily\scriptsize,
+  keywordstyle=\color{scblue}\bfseries,
+  keywordstyle=[2]\color{scgreen},
+  commentstyle=\color{scgrey}\itshape,
+  stringstyle=\color{scaccent},
+  showstringspaces=false,
+  columns=fullflexible,
+  keepspaces=true,
+  escapeinside={(@}{@)},
+  xleftmargin=0.6em,
+  aboveskip=0.4em,
+  belowskip=0.2em,
+}
+\lstset{style=sc}
+\lstdefinestyle{plain}{style=sc,language={},keywordstyle=\relax}
+% For a two-column frame: code on one side, the IR it generates on the other.
+\lstdefinestyle{half}{style=sc,basicstyle=\ttfamily\fontsize{6}{7.3}\selectfont,
+  xleftmargin=0.2em}
+% A size smaller, for a two-column frame that also needs room for bullets.
+\lstdefinestyle{halfs}{style=half,basicstyle=\ttfamily\fontsize{5.6}{6.8}\selectfont}
+% Marks what differs from the reference, inside a listing's (@ @) escape.
+% \frenchspacing: otherwise TeX widens the space after a colon and the
+% columns of a monospaced listing stop lining up.
+\newcommand{\df}[1]{\textcolor{scaccent}{\bfseries\frenchspacing #1}}
+% \hl<2>{...}: like \df, but only on the given overlay; plain otherwise. For
+% walking a listing a few lines at a time. Text inside an escape gets no
+% keyword colouring, so mark keywords by hand with \lkw{...} (and comments with
+% \lcm{...}) and the line looks like its neighbours when it is not highlighted.
+\newcommand{\lkw}[1]{\textcolor{scblue}{\bfseries #1}}
+\newcommand{\lcm}[1]{\textcolor{scgrey}{\itshape #1}}
+\newcommand<>{\hl}[1]{\alt#2{\df{\let\lkw\@firstofone\let\lcm\@firstofone #1}}{{\frenchspacing #1}}}
+\newcommand{\cd}[1]{{\ttfamily\small #1}}
+
+% --- small helpers -------------------------------------------------------
+% A box for an error message the room will actually see.
+\newcommand{\errbox}[1]{%
+  \begin{beamercolorbox}[wd=\dimexpr\linewidth-0.7em\relax,sep=0.35em]{postit}%
+    \color{scred}\ttfamily\footnotesize #1%
+  \end{beamercolorbox}}
+% A boxed command line or set of flags worth copying down.
+\newcommand{\cmdbox}[1]{%
+  \begin{center}\tikz\node[draw=scblue,fill=scwash,rounded corners=2pt,
+    inner sep=5pt,font=\ttfamily\small]{#1};\end{center}}
+% Fixed-height area so staged code does not jump between overlays.
+\newenvironment{stage}[1]{\begin{overlayarea}{\textwidth}{#1}}{\end{overlayarea}}

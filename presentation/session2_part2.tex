@@ -1,0 +1,721 @@
+% SC26 MLIR tutorial -- Session 2, Part 2 (distributing Linalg on the GPU).
+% Presenter deck.
+%
+% Build:  make            (the deck PDF)
+% See presentation/README.md.
+\providecommand{\notesmode}{0}
+\documentclass[aspectratio=169,10pt]{beamer}
+\usepackage{sc26}
+\ifnum\notesmode=1 \setbeameroption{show notes}\fi
+
+\title{Introduction to MLIR}
+\subtitle{Session 2, Part 2 --- Distributing Linalg on the GPU}
+\author{SC26 Tutorial}
+\date{}
+
+\begin{document}
+
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+\note{Pre-run setup cells 0--9 of the walkthrough notebook on a T4 runtime
+before the room fills: the toolchain download is the slowest thing in this
+part and teaches nothing.
+
+One exercise, widening the distribution schedule: about 10 minutes of
+keyboard time. Step 1 is read and run together; nobody types anything in it.
+
+Known problem: the walkthrough notebook clones session2-part2-solution, whose
+schedule is for matmul only. Its matvec cell (19) stops on the race check
+("tiling is not thread safe at axis \#1") on the first pass. Until that is
+settled, run step 2's matvec and provided-schedule matmul cells (19 to 24)
+from the attendee notebook.}
+
+% =======================================================================
+\begin{frame}{Setup}
+  \begin{itemize}
+    \item<1-> \textbf{Switch the runtime to a GPU:}
+      \cd{Change runtime type $\to$ T4 GPU}, before running any cell.
+    \item<2-> \textbf{It is a fresh runtime.} Nothing from Part 1 carries
+      over, so the notebook downloads the toolchain again.
+    \item<3-> \textbf{You edit one MLIR file, a schedule,} as in Part 1: edit,
+      save, re-run the cell. No C++.
+    \item<4-> \textbf{One exercise:} distribute matmul along its columns too.
+  \end{itemize}
+\end{frame}
+\note{Change runtime type is under the Runtime menu, or the arrow next to
+Connect at the top right. Ctrl+F8 (run every cell above) catches someone up
+before the exercise; after it, not on the exercise's cells, for the reason in
+the exercise slide's note.}
+
+% =======================================================================
+\begin{frame}{Same Tiling, onto the GPU}
+  \begin{center}
+  \begin{tikzpicture}[
+      box/.style={draw=scblue,fill=scwash,rounded corners=2pt,inner sep=5pt,
+                  font=\ttfamily\scriptsize,minimum height=2.4em,align=center},
+      lbl/.style={font=\scriptsize\itshape,color=scgrey,align=center},
+      arr/.style={-{Stealth[length=2mm]},draw=scgrey,thick}]
+
+    \node[box,draw=scaccent] (op) at (0,0) {linalg.matmul};
+    \node[box] (for) at (3.9,1.0) {scf.for\\\normalfont\itshape tile loops};
+    \node[box] (cpu) at (11.0,1.0) {JIT + run\\\normalfont\itshape CPU, one thread};
+    \draw[arr] (op) -- (for);
+    \node[lbl] at (1.35,0.95) {tile\_using\_for\\Part 1};
+    \draw[arr] (for) -- node[lbl,above]{loops + CPU pipeline} (cpu);
+
+    \visible<2->{
+      \node[box,draw=scaccent] (forall) at (3.9,-1.0)
+        {scf.forall\\\normalfont\itshape tile loops};
+      \node[box] (launch) at (7.5,-1.0)
+        {gpu.launch\\\normalfont\itshape blocks, threads};
+      \node[box] (t4) at (11.0,-1.0) {JIT + run\\\normalfont\itshape T4 GPU};
+      \draw[arr,draw=scaccent] (op) -- (forall);
+      \node[lbl] at (1.35,-0.95) {tile\_using\_forall\\\emph{this part}};
+      \draw[arr] (forall) -- (launch);
+      \draw[arr] (launch) -- (t4);
+    }
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<1-> In Part 1, we tiled Linalg ops into \cd{scf.for} loops: one tile after
+      another, on one CPU thread.
+    \item<2-> Here we tile the same ops into \cd{scf.forall} loops, whose
+      iterations may run in parallel.
+    \item<3-> The schedule also says which loops become the blocks and which
+      the threads, and builds the \cd{gpu.launch}.
+  \end{itemize}
+\end{frame}
+\note{Step 1 is the payloads: Part 1's two files with the host registration
+from Session 1 Part 2. Step 2 is the schedule, including how it maps the
+loops onto the GPU, the exercise, and why the mapping it asks for is the
+right one for memory.}
+
+% =======================================================================
+\section{Step 1 --- The GPU Payloads}
+\begin{frame}[plain]\sectionpage\end{frame}
+
+\begin{frame}[fragile]{The GPU Payloads}
+  \cd{session2/linalg\_matvec\_gpu.mlir}:
+\begin{lstlisting}[language=mlir]
+module {
+  func.func @matvec(%mat: memref<128x512xf32>, %vec: memref<512xf32>,
+                    %out: memref<128xf32>) {
+    (@\hl<2>{\%mat\_u = \lkw{memref.cast} \%mat : \lkw{memref}<128x512xf32> \lkw{to} \lkw{memref}<*xf32>}@)
+    (@\hl<2>{\%vec\_u = \lkw{memref.cast} \%vec : \lkw{memref}<512xf32> \lkw{to} \lkw{memref}<*xf32>}@)
+    (@\hl<2>{\%out\_u = \lkw{memref.cast} \%out : \lkw{memref}<128xf32> \lkw{to} \lkw{memref}<*xf32>}@)
+    (@\hl<2>{\lkw{gpu.host\_register} \%mat\_u : \lkw{memref}<*xf32>}@)
+    (@\hl<2>{\lkw{gpu.host\_register} \%vec\_u : \lkw{memref}<*xf32>}@)
+    (@\hl<2>{\lkw{gpu.host\_register} \%out\_u : \lkw{memref}<*xf32>}@)
+    (@\hl<3>{\lkw{linalg.matvec} ins(\%mat, \%vec : \lkw{memref}<128x512xf32>, \lkw{memref}<512xf32>)}@)
+                  (@\hl<3>{outs(\%out : \lkw{memref}<128xf32>)}@)
+    return
+  }
+}
+\end{lstlisting}
+  \vspace{0.2em}
+  \begin{itemize}
+    \item<2-> The host buffers, registered so the GPU can reach them, as in
+      Session 1 Part 2's kernel. Boilerplate: we leave it there.
+    \item<3-> The op is Part 1's \cd{linalg.matvec}, unchanged.
+  \end{itemize}
+\end{frame}
+\note{As in the repo, without the header comment. linalg\_matmul\_gpu.mlir is
+the same, around Part 1's linalg.matmul. Both files are complete; round-trip
+them in the notebook (cell 13) as you show them. The cast to an unranked
+memref is only because gpu.host\_register takes one.
+
+Nothing unregisters a buffer. If a registered buffer is freed and a later
+numpy array lands on its address, the kernel writes somewhere numpy is not
+reading and the result comes back all zeros. That is why the notebook keeps
+every buffer it hands a kernel in REGISTERED.}
+
+% =======================================================================
+\section{Step 2 --- Distributing, with a Transform Schedule}
+\begin{frame}[plain]\sectionpage\end{frame}
+
+\begin{frame}[fragile]{Tiling into Parallel Loops}
+  \begin{center}
+    Tiling matvec's \cd{i} by 32, the shape of it:
+  \end{center}
+  \begin{columns}[t]
+    \begin{column}{0.47\textwidth}
+      \begin{center}\small\textbf{Part 1: \cd{tile\_using\_for}}\end{center}
+\begin{lstlisting}[language=mlir]
+(@\hl<2>{\lkw{scf.for} \%i = 0 \lkw{to} 128 \lkw{step} 32 \{}@)
+  %o = memref.subview %out[%i] [32]
+  linalg.matvec ins(...) outs(%o)
+}
+\end{lstlisting}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \begin{center}\small\textbf{this part: \cd{tile\_using\_forall}}\end{center}
+\begin{lstlisting}[language=mlir]
+(@\hl<3>{\lkw{scf.forall} (\%b) in (4) \{}@)
+  (@\hl<3>{\%i = \lkw{affine.apply} \%b * 32}@)
+  %o = memref.subview %out[%i] [32]
+  linalg.matvec ins(...) outs(%o)
+} (@\hl<4>{\{mapping = [\#gpu.block<x>]\}}@)
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+  \vspace{0.6em}
+  \begin{itemize}
+    \item<2-> \cd{scf.for} runs its iterations one after another, in order.
+    \item<3-> \cd{scf.forall} says its iterations are independent: they may
+      run in any order, or all at once.
+    \item<4-> Its \alert{mapping} says what runs each iteration on the GPU:
+      here a block, numbered by its block id in x.
+    \item<5-> Only a \cd{parallel} loop can be tiled this way: tiles of a
+      reduction would add into the same \cd{out[i]} at once.
+      \cd{tile\_using\_forall} only warns: \cd{tiling is not thread safe}.
+  \end{itemize}
+\end{frame}
+\note{Both listings are the shape, not real output: the names are made up and
+the types left out. The mapping attribute is printed exactly like that on a
+real scf.forall.
+
+The forall counts tiles, 4, and each iteration computes its own offset; the
+for loop steps through the offsets directly.
+
+The real warning is "warning: tiling is not thread safe at axis \#1" (the
+axis is the loop's position). mlir-opt still emits the loops and exits 0,
+which is why every notebook cell that applies the schedule keeps its stderr
+and fails on that text.}
+
+% =======================================================================
+\begin{frame}{Blocks and Threads, from Two Tilings}
+  \begin{center}
+  \begin{tikzpicture}[
+      lbl/.style={font=\scriptsize,color=scink},
+      ids/.style={font=\ttfamily\scriptsize,color=scaccent}]
+    % out, 128 elements: 4 blocks of 32 rows, top to bottom
+    \foreach \b in {0,...,3} {
+      \draw[scblue,fill=scwash] (0,1.6-0.8*\b) rectangle (0.45,0.8-0.8*\b);
+      \node[ids,anchor=east] at (-0.1,1.2-0.8*\b) {bx = \b};
+    }
+    \node[ids] at (0.225,1.95) {\#gpu.block<x>};
+    \node[lbl] at (0.225,-1.9) {\cd{out}, 128};
+
+    \visible<2->{
+      % block 1, zoomed: 32 threads, one row each
+      \fill[scaccent!25] (0,0.8) rectangle (0.45,0);
+      \draw[scblue] (0,0.8) rectangle (0.45,0);
+      \fill[scaccent!25] (2.6,1.6) rectangle (3.05,-1.6);
+      \foreach \t in {1,...,31} {
+        \draw[scblue!40,very thin] (2.6,1.6-0.1*\t) -- (3.05,1.6-0.1*\t);
+      }
+      \draw[scblue] (2.6,1.6) rectangle (3.05,-1.6);
+      \draw[scgrey,dashed] (0.45,0.8) -- (2.6,1.6);
+      \draw[scgrey,dashed] (0.45,0) -- (2.6,-1.6);
+      \node[ids] at (2.825,1.95) {\#gpu.thread<x>};
+      \node[ids,anchor=west] at (3.12,1.55) {tx = 0};
+      \node[ids,anchor=west] at (3.12,-1.55) {tx = 31};
+      \node[lbl] at (2.825,-1.9) {block 1: 32 threads};
+    }
+
+    \visible<3->{
+      % one thread: tx = 5 of block 1
+      \fill[scaccent] (2.6,1.1) rectangle (3.05,1.0);
+      \node[ids,anchor=east] at (2.53,1.05) {tx = 5};
+      \draw[-{Stealth[length=1.5mm]},scaccent] (3.15,1.05) -- (4.45,1.05);
+      \node[lbl,anchor=west,align=left] at (4.55,1.05)
+        {one thread: \cd{out[i] += mat[i, j] * vec[j]},\\for all 512 \cd{j}};
+      \node[lbl,anchor=west] at (4.55,0.2)
+        {\cd{i = bx * 32 + tx = 1 * 32 + 5 = 37}};
+    }
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.4em}
+  \begin{itemize}
+    \item<1-> Tile \cd{i} by 32, mapped to \cd{\#gpu.block<x>}: 4 iterations,
+      the grid's 4 blocks, \cd{bx} = 0 \dots{} 3.
+    \item<2-> Tile each of those by 1, mapped to \cd{\#gpu.thread<x>}: 32
+      iterations, the 32 threads of each block, \cd{tx} = 0 \dots{} 31.
+    \item<3-> Each thread computes one \cd{out[i]}, reducing over \cd{j}
+      itself. Its \cd{i} is Session 1 Part 2's
+      \cd{blockIdx * blockDim + threadIdx}.
+  \end{itemize}
+\end{frame}
+\note{Recall from Session 1 Part 2: a launch is a grid of blocks, each block a
+group of threads, and every thread knows its block id, its thread id and the
+block size.
+
+4 blocks of 32 threads is 128 threads, one per element of out: the same work
+as Session 1 Part 2's matvec kernel, which used one block of numRows threads.
+
+Not to scale: out is drawn as four boxes, and the zoomed block has its 32
+rows drawn large.}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: \cd{distribute\_linalg.mlir}, Step 1 of 4 --- The Tilings}
+\begin{lstlisting}[language=mlir]
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(
+      %root: !transform.any_op {transform.readonly}) {
+    (@\hl<2>{\%ops = \lkw{transform.structured.match} interface\{LinalgOp\} in \%root}@)
+      : (!transform.any_op) -> !transform.any_op
+    (@\hl<5>{\%block\_op}@), %blocks = (@\hl<3>{\lkw{transform.structured.tile\_using\_forall} \%ops}@)
+      (@\hl<3>{tile\_sizes [32] (mapping = [\#gpu.block<x>])}@)
+      : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
+    %thread_op, %threads = (@\hl<4>{\lkw{transform.structured.tile\_using\_forall} \hl<5>{\%block\_op}}@)
+      (@\hl<4>{tile\_sizes [1] (mapping = [\#gpu.thread<x>])}@)
+      : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
+    // next: build the kernel
+    transform.yield
+  }
+}
+\end{lstlisting}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<2-> \cd{match} by interface, as in Part 1: any Linalg op.
+    \item<3-> The blocks: tile \cd{i} by 32 into an \cd{scf.forall}. The
+      mapping has one entry per tiled loop: this one becomes the blocks, by
+      block id in x.
+    \item<4-> The threads: the op inside each block, by 1. Each iteration
+      becomes a thread of that block, by thread id in x.
+    \item<5-> \cd{\%block\_op} is the op inside the blocks: the first step
+      returns it, and the second tiles it.
+  \end{itemize}
+\end{frame}
+\note{session2/distribute\_linalg.mlir, as in the repo without its comments;
+the "next" comment stands for the lines on the next slide. It runs the way
+Part 1's schedule did: -{}-transform-preload-library, then
+-{}-transform-interpreter (cell 19). Like Part 1's, it is a working
+schedule, written for matvec; they read it before changing anything.
+
+\%blocks and \%threads are handles to the two scf.foralls; nothing uses them.}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: \cd{distribute\_linalg.mlir}, Step 2 of 4 --- Building the Kernel}
+\begin{lstlisting}[language=mlir]
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(...) {
+    // the match, then the block and thread tilings
+    (@\hl<2>{\%func = \lkw{transform.structured.match} ops\{["func.func"]\} in \%root}@)
+      : (!transform.any_op) -> !transform.any_op
+    %launch = (@\hl<3>{\lkw{transform.gpu.map\_forall\_to\_blocks} \%func generate\_gpu\_launch}@)
+      : (!transform.any_op) -> !transform.any_op
+    (@\hl<4>{\lkw{transform.gpu.map\_nested\_forall\_to\_threads} \%launch block\_dims = [32, 1, 1]}@)
+      sync_after_distribute = false
+      : (!transform.any_op) -> !transform.any_op
+    transform.yield
+  }
+}
+\end{lstlisting}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<2-> Match the function: the next two steps work on the code around
+      the loops.
+    \item<3-> \cd{map\_forall\_to\_blocks} puts the block loop into a
+      \cd{gpu.launch}, one block per iteration, and replaces its index with
+      \cd{gpu.block\_id x}.
+    \item<4-> \cd{map\_nested\_forall\_to\_threads} does the same for the
+      thread loop, with \cd{gpu.thread\_id x}. \cd{block\_dims} is the size of
+      each block: 32 threads in x.
+  \end{itemize}
+\end{frame}
+\note{The rest of the same file. sync\_after\_distribute = false leaves out a
+gpu.barrier after the thread loop, which this kernel does not need: no thread
+reads what another wrote.
+
+Both ops read the mapping attributes the tilings put on the loops. A loop
+without one is an error: "scf.forall op requires a mapping attribute".}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: \cd{distribute\_linalg.mlir}, Step 3 of 4 --- Applied to Matvec}
+\begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.6}{7.9}\selectfont]
+(@\hl<2>{\lkw{gpu.launch} blocks(\%arg3, \%arg4, \%arg5) in (\%arg9 = \%c4, \%arg10 = \%c1\_4, \%arg11 = \%c1\_5)}@)
+           (@\hl<2>{threads(\%arg6, \%arg7, \%arg8) in (\%arg12 = \%c32, \%arg13 = \%c1\_2, \%arg14 = \%c1\_3) \{}@)
+  (@\hl<3>{\%block\_id\_x = \lkw{gpu.block\_id}  x}@)
+  ...
+  (@\hl<3>{\%0 = \lkw{affine.apply} \lkw{affine\_map}<(d0) -> (d0 * 32)>(\%block\_id\_x)}@)
+  %subview = memref.subview %arg0[(@\hl<3>{\%0}@), 0] [32, 512] [1, 1] : ...
+  %subview_7 = memref.subview %arg1[0] [512] [1] : ...
+  %subview_8 = memref.subview %arg2[(@\hl<3>{\%0}@)] [32] [1] : ...
+  (@\hl<4>{\%thread\_id\_x = \lkw{gpu.thread\_id}  x}@)
+  ...
+  %subview_9 = memref.subview %subview[(@\hl<4>{\%thread\_id\_x}@), 0] [1, 512] [1, 1] : ...
+  %subview_10 = memref.subview %subview_7[0] [512] [1] : ...
+  %subview_11 = memref.subview %subview_8[(@\hl<4>{\%thread\_id\_x}@)] [1] [1] : ...
+  (@\hl<5>{\lkw{linalg.matvec} ins(\%subview\_9, \%subview\_10 : ...) outs(\%subview\_11 : ...)}@)
+  gpu.terminator
+}
+\end{lstlisting}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<2-> Grid size: \cd{(4, 1, 1)}, block size: \cd{(32, 1, 1)}: the
+      block loop's 4 iterations, and \cd{block\_dims}.
+    \item<3-> Block \cd{bx} (\cd{\%block\_id\_x}): 32 rows of \cd{mat} and
+      \cd{out}, from row \cd{\%0 = bx * 32}.
+    \item<4-> Thread \cd{tx} (\cd{\%thread\_id\_x}): one row of that slice,
+      row \cd{bx * 32 + tx}.
+    \item<5-> Inside, the original \cd{linalg.matvec}, on that one row. Still
+      Linalg: the next step lowers it.
+  \end{itemize}
+\end{frame}
+\note{The real output of cell 19, with mlir-opt -{}-mlir-print-local-scope so
+the affine map is written out in place; the notebook prints it as \#map,
+defined at the top. Compressed: each "..." after a colon is a type, the bare
+"..." lines are the unused y and z ids and two constants, and the casts and
+host registrations above the launch are left out.
+
+vec is used whole because its map, (i, j) -> (j), has no i in it: tiling i
+does not slice it.}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: Step 4 of 4 --- Compiling and Execution}
+\begin{lstlisting}[style=plain,basicstyle=\ttfamily\scriptsize]
+(@\hl<2>{convert-linalg-to-loops}@)
+(@\hl<3>{expand-strided-metadata}@)
+(@\hl<3>{lower-affine}@)
+(@\hl<4>{gpu-lower-to-nvvm-pipeline\{cubin-chip=sm\_75 cubin-format=bin cubin-features=+ptx78\}}@)
+\end{lstlisting}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<2-> \cd{convert-linalg-to-loops} turns the \cd{linalg.matvec} into
+      the thread's loop over \cd{j}: Session 1 Part 2's matvec kernel,
+      generated.
+    \item<3-> Part 1's two passes, for the subviews and their
+      \cd{affine.apply}.
+    \item<4-> Session 1 Part 2's GPU pipeline: the body compiled for this GPU,
+      the host side rewritten to launch it.
+    \item<5-> JIT-compiled as in Session 1 Part 2 --- the CUDA runtime library
+      in \cd{shared\_libs}, then \cd{engine.initialize()} --- and checked
+      against numpy:
+  \end{itemize}
+  \vspace{0.2em}
+  \visible<5->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
+\end{frame}
+\note{Cell 21. GPU\_LOWERING\_PIPELINE is these passes, with
+llvm-request-c-wrappers as well. The notebook reads the chip from nvidia-smi
+rather than hard-coding sm\_75.
+
+Lowered, the body is a one-trip loop over the thread's row around the
+512-step reduction over j.
+
+Without engine.initialize() every CUDA call fails with
+CUDA\_ERROR\_INVALID\_HANDLE: the compiled kernel is loaded by a global
+constructor that nothing else runs.}
+
+% =======================================================================
+\begin{frame}[fragile]{The Same Schedule, on Matmul}
+  \begin{center}
+  \begin{tikzpicture}[
+      lbl/.style={font=\scriptsize,color=scink},
+      ids/.style={font=\ttfamily\scriptsize,color=scaccent}]
+    % c, 128 x 256, as 4 x 8 tiles of 32 x 32. Left: the provided schedule.
+    \fill[scaccent!25] (0,0.45) rectangle (3.6,0);
+    \fill[scaccent] (0,0.31) rectangle (3.6,0.25);
+    \draw[step=0.45,scgrey!45,very thin] (0,-0.9) grid (3.6,0.9);
+    \foreach \b in {0,...,3} {
+      \draw[scblue] (0,0.9-0.45*\b) rectangle (3.6,0.45-0.45*\b);
+      \node[ids,anchor=east] at (-0.1,0.675-0.45*\b) {bx = \b};
+    }
+    \node[lbl] at (1.8,1.25) {provided: 4 blocks of 32 threads};
+    \node[lbl,align=center] at (1.8,-1.35)
+      {one thread: a whole row of \cd{c}};
+
+    \visible<3->{
+      % right: the exercise. A grid of 8 x 4 blocks, one thread per element
+      \begin{scope}[xshift=6.6cm]
+        \fill[scaccent!25] (0.9,0.45) rectangle (1.35,0);
+        \fill[scaccent] (1.0,0.31) rectangle (1.06,0.25);
+        \draw[step=0.45,scblue] (0,-0.9) grid (3.6,0.9);
+        \draw[-{Stealth[length=1.2mm]},scaccent] (0,1.0) -- (3.6,1.0)
+          node[right,ids]{x};
+        \draw[-{Stealth[length=1.2mm]},scaccent] (-0.12,0.9) -- (-0.12,-0.9)
+          node[below,ids]{y};
+        \node[lbl] at (1.8,1.35) {the exercise: blocks of 32 $\times$ 32
+          threads};
+        \node[lbl,align=center] at (1.8,-1.35)
+          {one thread: one \cd{c[i, j]}};
+      \end{scope}
+    }
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.1em}
+  The innermost op, from the same schedule:
+\begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.6}{7.9}\selectfont]
+linalg.matmul ins(%subview_9, %subview_10 : memref<1x512xf32, ...>, memref<512x256xf32, ...>)
+              outs(%subview_11 : memref<(@\hl<2>{1x256}@)xf32, ...>)
+\end{lstlisting}
+  \vspace{0.1em}
+  \begin{itemize}
+    \item<1-> Unchanged, the schedule tiles only the first loop, \cd{i}, and
+      maps it to x: 4 blocks of 32 threads, as for matvec.
+    \item<2-> Each thread gets a 1 $\times$ \alert{256} slice of \cd{c}: a
+      whole row, with \cd{j} and \cd{k} as loops in its body.
+    \item<3-> The exercise: distribute \cd{j} too, so that each thread
+      computes one \cd{c[i, j]}, with the columns on x and the rows on y.
+  \end{itemize}
+\end{frame}
+\note{Cells 23 and 24: the launch, and a run that passes the numpy check. It
+is correct, just 128 threads for 32 768 elements, each doing 256 x 512
+multiply-adds.
+
+The grids are to scale, one cell per 32 by 32 tile of c; the thread's row and
+element are drawn larger than they are.}
+
+% =======================================================================
+\begin{frame}[fragile]{Exercise 7 --- Distribute Matmul along Columns Too}
+  \begin{center}\large
+    Modify \cd{session2/distribute\_linalg.mlir} so that each thread computes
+    one \mbox{\cd{c[i, j]}}, in blocks of 32 $\times$ 32 threads: the
+    columns (\cd{j}) on x, the rows (\cd{i}) on y.
+  \end{center}
+  \vspace{0.1em}
+  \textbf{What is different from matvec:}
+  \begin{itemize}
+    \item Matvec has one parallel loop, \cd{i}. Matmul has two, \cd{i} and
+      \cd{j}; \cd{k} is a reduction, and stays inside each thread.
+    \item One tile size and one mapping entry per loop, in
+      \cd{iterator\_types} order: \cd{i} first, then \cd{j}.
+    \item Each block is 32 $\times$ 32 threads.
+  \end{itemize}
+  \vspace{0.3em}
+  \textbf{Check as you go --- round-trip it} after every save:
+\begin{lstlisting}[style=plain,basicstyle=\ttfamily\small]
+!mlir-opt distribute_linalg.mlir
+\end{lstlisting}
+  \vspace{0.1em}
+  \begin{itemize}
+    \item That checks the schedule is well-formed, not that it does what you
+      meant. For that, run the check under \emph{Matmul, distributed along
+      columns too}: matmul's innermost op must write a 1 $\times$ 1 slice of
+      \cd{c}, cut at \cd{[\%thread\_id\_y, \%thread\_id\_x]}.
+  \end{itemize}
+  \vspace{0.3em}
+  \begin{center}\color{scaccent}\large
+    10 minutes to write it --- then we walk through the solution.
+  \end{center}
+\end{frame}
+\note{After an edit: the four cells under "Matmul, distributed along columns
+too", in order: the round-trip (cell 26), the apply (28), the check (30) and
+the run (32). Not Ctrl+F8 on any of them: it re-runs the matvec cell (19),
+and a schedule widened for matmul distributes matvec's reduction there, so
+that cell stops on "tiling is not thread safe at axis \#1" and the race
+message.
+
+What the usual mistakes produce:
+block\_dims left at [32, 1, 1]: "the number of required parallel resources
+(blocks or threads) 1024 overflows the number of available resources 32".
+A second size with no second mapping entry: "scf.forall op requires a
+mapping attribute". x and y the wrong way round: the check stops with "x is
+not on the columns yet", though it would run and match numpy. A separate step for
+j, as in Part 1: "scf.forall op requires a mapping attribute of kind
+'thread' or 'warp'". [32, 32, 32]: "tiling is not thread safe at axis \#2".
+
+Until the exercise is done, the check stops with "matmul is not distributed
+along columns yet -- each thread still computes a 1x256 slice of c".}
+
+% =======================================================================
+\begin{frame}[fragile]{Solution --- \cd{distribute\_linalg.mlir}, and What Changed}
+\begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.4}{7.6}\selectfont]
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(
+      %root: !transform.any_op {transform.readonly}) {
+    %ops = transform.structured.match interface{LinalgOp} in %root
+      : (!transform.any_op) -> !transform.any_op
+    %block_op, %blocks = transform.structured.tile_using_forall %ops
+      tile_sizes (@\df{[32, 32]}@) (mapping = (@\df{[\#gpu.block<y>, \#gpu.block<x>]}@))
+      : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
+    %thread_op, %threads = transform.structured.tile_using_forall %block_op
+      tile_sizes (@\df{[1, 1]}@) (mapping = (@\df{[\#gpu.thread<y>, \#gpu.thread<x>]}@))
+      : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
+    %func = transform.structured.match ops{["func.func"]} in %root
+      : (!transform.any_op) -> !transform.any_op
+    %launch = transform.gpu.map_forall_to_blocks %func generate_gpu_launch
+      : (!transform.any_op) -> !transform.any_op
+    transform.gpu.map_nested_forall_to_threads %launch block_dims = (@\df{[32, 32, 1]}@)
+      sync_after_distribute = false
+      : (!transform.any_op) -> !transform.any_op
+    transform.yield
+  }
+}
+\end{lstlisting}
+  \vspace{0.2em}
+  \begin{itemize}
+    \item<2-> Both tilings take \cd{j} as well: \cd{[32, 32]}, then
+      \cd{[1, 1]}.
+    \item<3-> The mappings follow the loops: \cd{i} first, on y; \cd{j}
+      second, on x.
+    \item<4-> Each block is 32 $\times$ 32 threads.
+  \end{itemize}
+\end{frame}
+\note{The handles do not change: tile\_using\_forall makes one scf.forall
+however many loops it tiles.
+
+This schedule is for matmul only. On matvec its second size lands on the
+reduction, and the matvec cell stops on the race check.}
+
+% =======================================================================
+\begin{frame}[fragile]{Solution --- \cd{gpu.launch}}
+\begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.1}{7.0}\selectfont]
+(@\hl<2>{\lkw{gpu.launch} blocks(\%arg3, \%arg4, \%arg5) in (\%arg9 = \%c8, \%arg10 = \%c4, \%arg11 = \%c1\_4)}@)
+           (@\hl<2>{threads(\%arg6, \%arg7, \%arg8) in (\%arg12 = \%c32, \%arg13 = \%c32\_2, \%arg14 = \%c1\_3) \{}@)
+  (@\hl<3>{\%block\_id\_x = \lkw{gpu.block\_id}  x}@)
+  (@\hl<3>{\%block\_id\_y = \lkw{gpu.block\_id}  y}@)
+  ...
+  (@\hl<3>{\%0 = \lkw{affine.apply} \lkw{affine\_map}<(d0) -> (d0 * 32)>(\%block\_id\_y)}@)
+  (@\hl<3>{\%1 = \lkw{affine.apply} \lkw{affine\_map}<(d0) -> (d0 * 32)>(\%block\_id\_x)}@)
+  %subview = memref.subview %arg0[(@\hl<3>{\%0}@), 0] [32, 512] [1, 1] : ...
+  %subview_6 = memref.subview %arg1[0, (@\hl<3>{\%1}@)] [512, 32] [1, 1] : ...
+  %subview_7 = memref.subview %arg2[(@\hl<3>{\%0, \%1}@)] [32, 32] [1, 1] : ...
+  (@\hl<4>{\%thread\_id\_x = \lkw{gpu.thread\_id}  x}@)
+  (@\hl<4>{\%thread\_id\_y = \lkw{gpu.thread\_id}  y}@)
+  ...
+  %subview_8 = memref.subview %subview[(@\hl<4>{\%thread\_id\_y}@), 0] [1, 512] [1, 1] : ...
+  %subview_9 = memref.subview %subview_6[0, (@\hl<4>{\%thread\_id\_x}@)] [512, 1] [1, 1] : ...
+  %subview_10 = memref.subview %subview_7[(@\hl<4>{\%thread\_id\_y, \%thread\_id\_x}@)] [1, 1] [1, 1] : ...
+  (@\hl<5>{\lkw{linalg.matmul} ins(\%subview\_8, \%subview\_9 : ...) outs(\%subview\_10 : ...)}@)
+  gpu.terminator
+}
+\end{lstlisting}
+  \begin{itemize}
+    \item<2-> Grid size: \cd{(8, 4, 1)}, block size: \cd{(32, 32, 1)}: x runs
+      over the columns.
+    \item<3-> Block \cd{(by, bx)} computes the 32 $\times$ 32 tile of \cd{c}
+      at \cd{(by * 32, bx * 32)}, reading 32 rows of \cd{a} and 32 columns
+      of \cd{b}.
+    \item<4-> Thread \cd{(ty, tx)} computes element \cd{[ty, tx]} of that
+      tile, reading one row of \cd{a} and one column of \cd{b}.
+    \item<5-> Lowered, that is 512 iterations of \cd{k}. Run, and checked
+      against numpy: \visible<5->{{\color{scgreen}\ttfamily OK}}
+  \end{itemize}
+\end{frame}
+\note{The real output of the apply cell (28) with the solved schedule, with
+the affine maps written out in place (-{}-mlir-print-local-scope) and
+compressed as for matvec. Grid (8, 4, 1): x counts the 8 blocks of columns,
+y the 4 blocks of rows. by cuts the 32-row strips of a and c, bx the
+32-column strips of b and c; the thread ids then take one row of a's strip
+and one column of b's. Cell 30 checks it and cell 32 runs it. Run cells 26
+to 32 in the walkthrough notebook as you go.}
+
+% =======================================================================
+\begin{frame}{Which Thread Computes Which Element}
+  \begin{center}
+  \begin{tikzpicture}[
+      cell/.style={draw=scblue,fill=scwash,minimum width=1.05cm,
+                   minimum height=0.5cm,font=\ttfamily\scriptsize},
+      hdr/.style={font=\ttfamily\scriptsize,color=scaccent}]
+    \visible<2->{
+      \fill[scaccent!30,rounded corners=2pt] (-0.62,0.32) rectangle (6.25,-0.32);
+    }
+    \foreach \c in {0,...,4} {
+      \node[hdr] at (\c*1.15, 0.6) {tx = \c};
+      \foreach \r in {0,...,4} {
+        \node[cell] at (\c*1.15, -\r*0.6) {(\r, \c)};
+      }
+    }
+    \foreach \r in {0,...,4} {
+      \node[hdr,anchor=east] at (-0.7, -\r*0.6) {ty = \r};
+      \node[font=\scriptsize,color=scgrey] at (5.9, -\r*0.6) {$\cdots$};
+    }
+    \foreach \c in {0,...,4} {
+      \node[font=\scriptsize,color=scgrey] at (\c*1.15, -2.95) {$\vdots$};
+    }
+    \node[font=\scriptsize,color=scgrey,anchor=west] at (6.6, -0.95)
+      {a block's 32 $\times$ 32 tile of \cd{c}:};
+    \node[font=\scriptsize,color=scgrey,anchor=west] at (6.6, -1.3)
+      {each cell is the element \cd{(i, j)}};
+    \visible<2->{
+      \node[font=\scriptsize,color=scaccent,anchor=west] at (6.6, 0)
+        {one warp: \cd{ty} = 0, \cd{tx} = 0 \dots{} 31};
+    }
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.4em}
+  \begin{itemize}
+    \item<1-> The y ids pick the row of \cd{c}, \cd{by * 32 + ty}; the x ids
+      pick the \alert{column}, \cd{bx * 32 + tx}. The schedule said so.
+    \item<2-> A warp is 32 threads with consecutive \cd{tx} and the same
+      \cd{ty}: here, 32 elements along a row of \cd{c}.
+  \end{itemize}
+\end{frame}
+\note{The same picture as Session 1 Part 2's "Thread to Element Mapping",
+block by block: that kernel also put x on the columns.}
+
+% =======================================================================
+\begin{frame}{Why x on the Columns: Coalescing}
+  \begin{center}
+  \begin{tikzpicture}[
+      lbl/.style={font=\scriptsize,color=scink,align=center}]
+    % a corner of c, row-major. Left: a warp with x on the columns.
+    \fill[scaccent!45] (0,-0.3) rectangle (3.0,-0.6);
+    \draw[step=0.3,scblue!50,very thin] (0,-1.8) grid (3.0,0);
+    \draw[scblue] (0,-1.8) rectangle (3.0,0);
+    \draw[-{Stealth[length=1.2mm]},scgrey] (0,0.2) -- (3.0,0.2)
+      node[right,font=\scriptsize,color=scgrey]{memory order};
+    \node[lbl] at (1.5,0.6) {x on the columns: this schedule};
+    \node[lbl] at (1.5,-2.25) {a warp: 32 adjacent floats, 128 bytes};
+
+    \visible<3->{
+      % right: a warp with x on the rows
+      \begin{scope}[xshift=5.8cm]
+        \fill[scaccent!45] (0.6,0) rectangle (0.9,-1.8);
+        \draw[step=0.3,scblue!50,very thin] (0,-1.8) grid (3.0,0);
+        \draw[scblue] (0,-1.8) rectangle (3.0,0);
+        \draw[-{Stealth[length=1.2mm]},scgrey] (0,0.2) -- (3.0,0.2);
+        \node[lbl] at (1.5,0.6) {x on the rows: y and x swapped};
+        \node[lbl] at (1.5,-2.25) {a warp: 32 floats, a row (1 KB) apart};
+      \end{scope}
+    }
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<1-> \cd{c} is row-major: \cd{c[i, j]} and \cd{c[i, j + 1]} are
+      adjacent in memory.
+    \item<2-> A warp's loads and stores are \alert{coalesced} into one
+      transaction when its 32 addresses are adjacent. With x on \cd{j}, a
+      warp writes 32 adjacent floats of \cd{c}, and reads 32 of \cd{b}.
+  \end{itemize}
+\end{frame}
+\note{No timing, deliberately: Colab GPU timings are noise, and a number that
+moves for the wrong reason teaches worse than no number.
+
+The same goes for a: with x on j every lane of a warp reads the same
+a[i, k]; with x on i the lanes read a[i, k] 2 KB apart, and every lane reads
+the same b[k, j].
+
+Swapping y and x in both mappings is the right-hand picture: each lane is a
+row of c apart, one transaction per lane. It runs and matches numpy; the
+notebook's check is what rejects it. That is why the exercise put x on the
+columns, as Session 1 Part 2's kernel did; in the schedule it is one
+attribute per loop.}
+
+% =======================================================================
+\begin{frame}{Recap}
+  \begin{center}
+  \begin{tikzpicture}[
+      box/.style={draw=scblue,fill=scwash,rounded corners=2pt,inner sep=5pt,
+                  font=\ttfamily\scriptsize,minimum height=2.4em,align=center},
+      lbl/.style={font=\scriptsize\itshape,color=scgrey,align=center},
+      arr/.style={-{Stealth[length=2mm]},draw=scgrey,thick}]
+    \node[box] (op) at (0,0) {linalg.matmul};
+    \node[box,draw=scaccent] (forall) at (4.0,0)
+      {scf.forall $\times$ 2\\\normalfont\itshape mapped: blocks, threads};
+    \node[box] (launch) at (7.9,0)
+      {gpu.launch\\\normalfont\itshape 8$\times$4 blocks of 32$\times$32};
+    \node[box] (run) at (11.3,0) {JIT + run\\\normalfont\itshape T4 GPU};
+    \draw[arr,draw=scaccent] (op) -- node[lbl,above=2pt]{tile} (forall);
+    \draw[arr,draw=scaccent] (forall) -- node[lbl,above=2pt]{map} (launch);
+    \draw[arr] (launch) -- node[lbl,above=2pt]{GPU\\pipeline} (run);
+    \node[lbl] at (4.0,-0.95) {all in the schedule};
+    \draw[scgrey,thin] (1.0,-0.7) -- (6.6,-0.7);
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<2-> The same tiling as Part 1, into \cd{scf.forall} loops, each
+      mapped onto the GPU: the outer one to blocks, the nested one to
+      threads.
+    \item<3-> The schedule states the mapping, so it also decides how memory
+      is accessed: x on the columns, and each warp touches adjacent floats.
+  \end{itemize}
+\end{frame}
+\note{End here.}
+
+\end{document}

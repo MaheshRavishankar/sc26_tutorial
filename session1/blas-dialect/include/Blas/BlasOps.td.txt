@@ -1,0 +1,62 @@
+#ifndef BLAS_OPS
+#define BLAS_OPS
+
+include "Blas/BlasDialect.td"
+
+class Blas_Op<string mnemonic, list<Trait> traits = []> :
+    Op<Blas_Dialect, mnemonic, traits>;
+
+//===----------------------------------------------------------------------===//
+// blas.matvec -- the worked example. Read this first: it is the template for
+// the exercise below.
+//===----------------------------------------------------------------------===//
+
+def Blas_MatVecOp : Blas_Op<"matvec"> {
+  let summary = "matrix-vector product: out += mat * vec";
+  let description = [{
+    Computes `out[i] += sum_j mat[i, j] * vec[j]`.
+
+    `mat` is a 2D `f32` memref, `vec` and `out` are 1D `f32` memrefs. This op
+    is intentionally left unlowerable by any general-purpose pass: it only
+    becomes executable once a dedicated lowering pass (see the `LowerBlasTo*`
+    passes in this project) rewrites it into standard dialects.
+  }];
+
+  let arguments = (ins
+    MemRefRankOf<[F32], [2]>:$mat,
+    MemRefRankOf<[F32], [1]>:$vec,
+    MemRefRankOf<[F32], [1]>:$out);
+
+  let assemblyFormat =
+    "$mat `,` $vec `,` $out attr-dict `:` type($mat) `,` type($vec) `,` type($out)";
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// blas.matmul -- YOUR TURN.
+//===----------------------------------------------------------------------===//
+//
+// TODO(exercise): define `Blas_MatMulOp` here, modelled on Blas_MatVecOp
+// above. It computes `out[i, j] += sum_k a[i, k] * b[k, j]`, so all three
+// operands are 2D f32 memrefs.
+//
+// Your definition is correct when `mlir-opt --load-dialect-plugin=...` can
+// parse and re-print session1/matmul_custom.mlir unchanged, i.e. it must
+// accept exactly this syntax:
+//
+//   blas.matmul %a, %b, %out : memref<4x3xf32>, memref<3x5xf32>, memref<4x5xf32>
+//
+// Notes:
+//  - The C++ class name tablegen generates is the def name minus the
+//    `Blas_` prefix, so `def Blas_MatMulOp` gives you `blas::MatMulOp` --
+//    that is the name the lowering passes expect.
+//  - Set `let hasVerifier = 1;` as matvec does, then write
+//    `LogicalResult MatMulOp::verify()` in lib/BlasOps.cpp -- there is a
+//    matvec one there to copy, and a verifyDimsMatch helper to call. The two
+//    go together, and the failure if you forget is an awkward one: the plugin
+//    still *builds*, then mlir-opt refuses to load it with
+//      undefined symbol: _ZN4blas8MatMulOp6verifyEv
+//    which demangles to blas::MatMulOp::verify().
+
+#endif // BLAS_OPS

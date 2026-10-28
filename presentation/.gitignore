@@ -1,0 +1,13 @@
+# latexmk droppings. Only the deck PDF is committed; the handout and notes
+# PDFs are built on demand and stay local.
+*_handout.pdf
+*_notes.pdf
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.vrb

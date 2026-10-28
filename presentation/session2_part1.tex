@@ -1,0 +1,831 @@
+% SC26 MLIR tutorial -- Session 2, Part 1 (Linalg and tiling, CPU). Presenter deck.
+%
+% Build:  make            (the deck PDF)
+% See presentation/README.md.
+\providecommand{\notesmode}{0}
+\documentclass[aspectratio=169,10pt]{beamer}
+\usepackage{sc26}
+\ifnum\notesmode=1 \setbeameroption{show notes}\fi
+
+\title{Introduction to MLIR}
+\subtitle{Session 2, Part 1 --- Linalg and Tiling, CPU}
+\author{SC26 Tutorial}
+\date{}
+
+\begin{document}
+
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+\note{Pre-run setup cells 0--7 of the walkthrough notebook before the room
+fills: the toolchain download is the slowest thing in this part and teaches
+nothing. There is no plugin to build in this session.
+
+One exercise, extending the tiling schedule: about 10 minutes of keyboard
+time. Steps 1 and 3 are read and run together; nobody types anything in
+them.}
+
+% =======================================================================
+\begin{frame}{Setup}
+  \begin{itemize}
+    \item<1-> \textbf{It is a fresh runtime.} Nothing from Session 1 carries
+      over, so the notebook downloads the same toolchain again. Any runtime
+      will do: this part runs on the CPU.
+    \item<2-> \textbf{You edit one MLIR file, a schedule.} No C++ and no
+      rebuild in this session: edit, save, re-run the cell.
+    \item<3-> \textbf{One exercise:} tile matmul's third loop. Steps 1 and 3
+      we read and run together.
+    \item<4-> \textbf{Colab trick:} lost your place? \cd{Ctrl+F8} runs every
+      cell above the one you are on.
+  \end{itemize}
+\end{frame}
+\note{Matvec rides along as the second example, as in Session 1. Here it is
+not an answer sheet: the schedule they extend already works on it, and the
+exercise is to tile matmul's third loop.}
+
+% =======================================================================
+\begin{frame}{One level higher: Linalg}
+  \begin{center}
+  \begin{tikzpicture}[
+      box/.style={draw=scblue,fill=scwash,rounded corners=2pt,inner sep=5pt,
+                  font=\ttfamily\scriptsize,minimum height=2.4em,align=center},
+      lbl/.style={font=\scriptsize\itshape,color=scgrey,align=center},
+      arr/.style={-{Stealth[length=2mm]},draw=scgrey,thick}]
+
+    \node[box,draw=scaccent] (op) at (0,0)
+      {linalg.matmul\\\normalfont\itshape ships with MLIR};
+    \node[box] (scf) at (5.8,0) {scf.for nest};
+    \node[box] (run) at (10.8,0) {JIT + run\\\normalfont\itshape CPU, one thread};
+    \draw[arr] (op) -- node[lbl,above]{convert-linalg-to-loops} (scf);
+    \draw[arr] (scf) -- node[lbl,above]{Session 1's pipeline} (run);
+
+    \visible<2->{
+      \node[box,draw=scaccent] (tiled) at (2.9,-1.6)
+        {linalg.matmul\\\normalfont\itshape on 32$\times$32 tiles};
+      \draw[arr,draw=scaccent] (op.south) |- node[lbl,pos=0.25,left]
+        {a transform\\schedule} (tiled.west);
+      \draw[arr] (tiled.east) -| (scf.south);
+    }
+    \visible<3->{
+      \node[lbl,below=0.25cm of run,font=\small\itshape,color=scaccent]
+        {faster?};
+    }
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.2em}
+  \begin{itemize}
+    \item<1-> In Session 1 you defined \cd{blas.matmul} and wrote its
+      lowering. \alert{Linalg} is a dialect that ships with MLIR: its ops
+      already mean matmul and matvec, and their lowering is already written.
+    \item<1-> Linalg is a more general representation of linear-algebra
+      computations --- specifically \alert{einsum} computations, built on
+      \alert{polyhedral} compilation methods.
+    \item<2-> Linalg supports general loop transformations, like
+      \alert{tiling}.
+    \item<3-> Same computation, same single thread: \alert{does it get
+      faster?}
+  \end{itemize}
+\end{frame}
+\note{Step 1 is the top row: the Linalg op, lowered to loops and run, as in
+Session 1. Step 2 adds the tiling. Step 3 times both and asks why.
+
+Matmul is the theme throughout; matvec rides along as the smaller example.}
+
+% =======================================================================
+\section{Step 1 --- Linalg Ops}
+\begin{frame}[plain]\sectionpage\end{frame}
+
+\begin{frame}[fragile]{Linalg Primer: Modeling a Loop Nest}
+  \begin{center}
+    A bias add:\quad \cd{c[i, j] = a[i, j] + b[j]}
+  \end{center}
+  \vspace{0.4em}
+  \begin{center}
+  \begin{tikzpicture}[
+      lbl/.style={font=\scriptsize,color=scink},
+      mp/.style={font=\ttfamily\scriptsize,color=scaccent,fill=white,inner sep=1pt},
+      arr/.style={-{Stealth[length=1.6mm]},draw=scaccent,thick}]
+    % the loop nest
+    \node[font=\ttfamily\footnotesize,align=left,anchor=east] at (-0.65,-0.45) {%
+      \hl<1>{\lkw{for} i \lkw{in} range(4):}\\
+      \hphantom{fo}\hl<1>{\lkw{for} j \lkw{in} range(8):}\\
+      \hphantom{for }\hl<3>{c\hl<2>{[i, j]} = a\hl<2>{[i, j]} + b\hl<2>{[j]}}};
+    % the iteration space: one point per (i, j), 4 x 8
+    \foreach \i in {0,...,3} {
+      \foreach \j in {0,...,7} {
+        \fill[scblue!60] (\j*0.3,-\i*0.3) circle (0.045);
+      }
+    }
+    \fill[scaccent] (1.5,-0.3) circle (0.085);
+    \node[lbl] at (1.05,0.75) {the iteration space, 4 $\times$ 8};
+    \draw[-{Stealth[length=1.2mm]},scgrey] (-0.05,0.25) -- node[above,lbl]{\cd{j}}
+      (2.2,0.25);
+    \draw[-{Stealth[length=1.2mm]},scgrey] (-0.25,0.05) -- node[left,lbl]{\cd{i}}
+      (-0.25,-1.0);
+
+    \visible<2->{
+      % the data: a and c are 4 x 8, b has 8 elements; (i, j) = (1, 5)
+      \fill[scaccent!45] (7.2,0.9) rectangle (7.4,1.1);
+      \fill[scaccent!45] (7.2,-0.55) rectangle (7.4,-0.35);
+      \fill[scaccent!45] (7.2,-1.8) rectangle (7.4,-1.6);
+      \foreach \y/\h in {1.3/0.8, -0.35/0.2, -1.4/0.8} {
+        \draw[step=0.2,scgrey!45,very thin,shift={(6.2,\y)}] (0,0) grid (1.6,-\h);
+        \draw[scblue] (6.2,\y) rectangle (7.8,\y-\h);
+      }
+      \node[lbl,right] at (7.85,0.9) {\cd{a}};
+      \node[lbl,right] at (7.85,-0.45) {\cd{b}};
+      \node[lbl,right] at (7.85,-1.8) {\cd{c}};
+      \draw[arr] (1.5,-0.3) -- node[mp,pos=0.5]{(i, j) -> (i, j)} (7.2,1.0);
+      \draw[arr] (1.5,-0.3) -- node[mp,pos=0.5]{(i, j) -> (j)} (7.2,-0.45);
+      \draw[arr] (1.5,-0.3) -- node[mp,pos=0.5]{(i, j) -> (i, j)} (7.2,-1.7);
+    }
+    \visible<3->{
+      \node[lbl,color=scaccent,align=center] at (1.05,-1.65)
+        {at each point:\\\texttt{c[i, j] = a[i, j] + b[j]}};
+    }
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.6em}
+  \begin{itemize}
+    \item<1-> The loops span an \alert{iteration space}: one point per
+      \cd{(i, j)}.
+    \item<2-> Each access is a \alert{map} from that space to the data: the
+      point \cd{(i, j)} reads \cd{a[i, j]} and \cd{b[j]}, and writes
+      \cd{c[i, j]}.
+    \item<3-> Each point runs the \alert{loop body} once.
+  \end{itemize}
+\end{frame}
+\note{No Linalg on this slide yet, just the model: the iteration space is a
+box of integer points, each access is an affine map from it to an operand's
+data, and the body is what one point computes. The next slide is the op that
+stores exactly these three things.
+
+The b map, (i, j) -> (j), is the broadcast: every row of the iteration space
+reads the same b[j].}
+
+% =======================================================================
+\begin{frame}[fragile]{Linalg Primer: From Loops to \cd{linalg.generic}}
+  \begin{columns}[t]
+    \begin{column}{0.49\textwidth}
+      \begin{center}\small\textbf{the loop nest}\end{center}
+\begin{lstlisting}[style=half,language=mlir]
+(@\hl<2>{\lkw{scf.for} \%i = \%c0 \lkw{to} \%c4 \lkw{step} \%c1 \{}@)
+  (@\hl<2>{\lkw{scf.for} \%j = \%c0 \lkw{to} \%c8 \lkw{step} \%c1 \{}@)
+    %x = memref.load %a(@\hl<3>{[\%i, \%j]}@) : memref<4x8xf32>
+    %y = memref.load %b(@\hl<3>{[\%j]}@) : memref<8xf32>
+    (@\hl<4>{\%s = \lkw{arith.addf} \%x, \%y : \lkw{f32}}@)
+    memref.store %s, %c(@\hl<3>{[\%i, \%j]}@) : memref<4x8xf32>
+  }
+}
+\end{lstlisting}
+    \end{column}
+    \begin{column}{0.49\textwidth}
+      \begin{center}\small\textbf{the same, as \cd{linalg.generic}}\end{center}
+\begin{lstlisting}[style=half,language=mlir]
+(@\hl<3>{\#id = \lkw{affine\_map}<(i, j) -> (i, j)>}@)
+(@\hl<3>{\#bcast = \lkw{affine\_map}<(i, j) -> (j)>}@)
+linalg.generic {
+    (@\hl<3>{indexing\_maps = [\#id, \#bcast, \#id]}@),
+    (@\hl<2>{iterator\_types = ["parallel", "parallel"]}@)}
+    (@\hl<5>{ins(\%a, \%b : \lkw{memref}<4x8xf32>, \lkw{memref}<8xf32>)}@)
+    (@\hl<5>{outs(\%c : \lkw{memref}<4x8xf32>)}@) {
+(@\hl<4>{\textasciicircum{}bb0(\%x: \lkw{f32}, \%y: \lkw{f32}, \hl<5>{\%out: \lkw{f32}}):}@)
+  (@\hl<4>{\%s = \lkw{arith.addf} \%x, \%y : \lkw{f32}}@)
+  (@\hl<4>{\lkw{linalg.yield} \%s : \lkw{f32}}@)
+}
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+  \vspace{0.5em}
+  \begin{itemize}
+    \item<2-> \cd{iterator\_types}: one per loop, and the dependence between
+      points. Both are \cd{parallel}: no point depends on another.
+    \item<3-> \cd{indexing\_maps}: one per operand, the maps from the last
+      slide.
+    \item<4-> The region is the loop body, run at each point: it receives the
+      elements and yields the result.
+    \item<5-> \cd{ins} are read; \cd{outs} is written. The region also
+      receives the output's current value, \cd{\%out}, so an op can
+      accumulate into it.
+  \end{itemize}
+\end{frame}
+\note{Both sides are valid MLIR, and convert-linalg-to-loops turns the right
+one into the left one (with generated names). affine\_map dimensions can be
+named anything; mlir-opt prints them back as d0, d1.
+
+The generic op says nothing about loop order or how the loops are run; it
+only says what each point of the iteration space computes. That is what
+leaves the compiler free to tile it.
+
+The bias add ignores \%out, which is why its loop nest never loads c. Matmul
+and matvec use it: that is their +=.}
+
+% =======================================================================
+\begin{frame}[fragile]{Named Linalg Ops}
+  In \cd{linalg\_matmul.mlir} and \cd{linalg\_matvec.mlir}:
+\begin{lstlisting}[language=mlir]
+linalg.matmul ins(%a, %b : ...) outs(%c : ...)
+linalg.matvec ins(%mat, %vec : ...) outs(%out : ...)
+\end{lstlisting}
+  \vspace{0.2em}
+  \begin{itemize}
+    \item<2-> A \alert{named} Linalg op is really a \cd{linalg.generic} whose
+      indexing maps, iterator types and region are fixed by its name:
+  \end{itemize}
+  \vspace{0.2em}
+  \visible<2->{
+  \begin{center}\scriptsize
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{lll}
+      & \texttt{linalg.matmul} & \texttt{linalg.matvec} \\
+      \hline
+      \texttt{indexing\_maps} & \texttt{a:\ (i, j, k) -> (i, k)}
+        & \texttt{mat:\ (i, j) -> (i, j)} \\
+      & \texttt{b:\ (i, j, k) -> (k, j)} & \texttt{vec:\ (i, j) -> (j)} \\
+      & \texttt{c:\ (i, j, k) -> (i, j)} & \texttt{out:\ (i, j) -> (i)} \\
+      \hline
+      \texttt{iterator\_types} & \texttt{parallel, parallel, reduction}
+        & \texttt{parallel, reduction} \\
+      \hline
+      region yields & \texttt{c + a * b} & \texttt{out + mat * vec} \\
+    \end{tabular}
+  \end{center}}
+  \vspace{0.2em}
+  \begin{itemize}
+    \item<3-> Running \cd{linalg-generalize-named-ops} rewrites each named op
+      as the \cd{linalg.generic} it stands for: that is where this table
+      comes from.
+    \item<4-> All Linalg named ops and \cd{linalg.generic} implement the
+      \alert{\cd{LinalgOp} interface}, and Linalg transformations are written
+      against that interface, so any transformation applies to all of them.
+  \end{itemize}
+\end{frame}
+\note{Both files are complete; there is nothing to write in step 1. Round-trip
+both in the notebook (cell 11) as you show them. The listing leaves out the
+operand types: they are the 128x512, 512x256 and 128x256 memrefs (512 and 128
+for matvec's vector and output).
+
+Run cell 13 on the third step: it is linalg-generalize-named-ops on both
+files. mlir-opt names the dimensions d0, d1, d2 rather than i, j, k.
+
+The LinalgOp interface is what step 2's schedule matches on
+(structured.match interface\{LinalgOp\}), which is why it never has to name
+an op.
+
+reduction: points along k (along j for matvec) add into the same output
+element. The next slide shows what that does to the loops. Do not explain it
+as the output's map dropping k.
+
+Every Linalg named op on memrefs accumulates into its outs operand. That is
+why run\_and\_check zeroes the output buffer before each call.}
+
+% =======================================================================
+\begin{frame}[fragile]{Lowered to Loops}
+  \cd{mlir-opt linalg\_matvec.mlir -{}-convert-linalg-to-loops}, the body of
+  \cd{@matvec}:
+\begin{lstlisting}[language=mlir]
+%c0 = arith.constant 0 : index
+%c128 = arith.constant 128 : index
+%c1 = arith.constant 1 : index
+%c512 = arith.constant 512 : index
+(@\hl<2>{\lkw{scf.for} \%arg3 = \%c0 \lkw{to} \%c128 \lkw{step} \%c1 \{}@)                      // i
+  (@\hl<2>{\lkw{scf.for} \%arg4 = \%c0 \lkw{to} \%c512 \lkw{step} \%c1 \{}@)                    // j
+    (@\hl<3>{\%0 = \lkw{memref.load} \%arg0[\%arg3, \%arg4] : \lkw{memref}<128x512xf32>}@)
+    (@\hl<3>{\%1 = \lkw{memref.load} \%arg1[\%arg4] : \lkw{memref}<512xf32>}@)
+    (@\hl<4>{\%2 = \lkw{memref.load} \%arg2[\%arg3] : \lkw{memref}<128xf32>}@)
+    (@\hl<5>{\%3 = \lkw{arith.mulf} \%0, \%1 : \lkw{f32}}@)
+    (@\hl<5>{\%4 = \lkw{arith.addf} \%2, \%3 : \lkw{f32}}@)
+    (@\hl<5>{\lkw{memref.store} \%4, \%arg2[\%arg3] : \lkw{memref}<128xf32>}@)
+  }
+}
+\end{lstlisting}
+  \vspace{0.2em}
+  \begin{itemize}
+    \item<2-> One \cd{scf.for} per iterator type: \cd{i}, \cd{j}.
+    \item<3-> A load of each input, at the indices its map selects.
+    \item<4-> A load of \cd{out} too: \cd{j} is a \alert{reduction}, so every
+      point along \cd{j} adds into the same \cd{out[i]}, and the body reads
+      its current value first.
+    \item<5-> The body, then a store back into \cd{out}. It is Session 1's
+      \cd{matvec\_scf.mlir}, generated.
+  \end{itemize}
+\end{frame}
+\note{The // i, j comments are the only additions to the real output.
+
+The bias add from the primer, both loops parallel, lowers with no load of c
+at all. Strictly, the load is there because the body uses the output's
+current value, which a reduction needs. Do not explain it as out's map
+dropping j.
+
+One difference from Session 1's matvec\_scf.mlir, if someone spots it: that
+file loads out[i] once and carries the sum in iter\_args; this nest loads and
+stores out[i] on every j iteration. Same answer; LLVM cleans it up.}
+
+% =======================================================================
+\begin{frame}[fragile]{Lowering and Execution}
+\begin{lstlisting}[style=plain,basicstyle=\ttfamily\small]
+(@\hl<2>{convert-linalg-to-loops}@)
+(@{\normalfont\itshape then Session 1's CPU lowering pipeline}@)
+\end{lstlisting}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<2-> \cd{convert-linalg-to-loops} does the job your
+      \cd{convert-blas-to-scf} did in Session 1.
+    \item<3-> JIT-compiled, and checked against numpy's \cd{a @ b}.
+  \end{itemize}
+  \vspace{0.2em}
+  \visible<3->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
+\end{frame}
+\note{Cell 17. Its CPU\_LOWERING\_PIPELINE is llvm-request-c-wrappers,
+convert-linalg-to-loops, then the rest of Session 1's passes:
+convert-scf-to-cf, convert-cf-to-llvm, convert-arith-to-llvm,
+finalize-memref-to-llvm, convert-func-to-llvm, reconcile-unrealized-casts.
+In Session 1 convert-blas-to-scf ran as its own step before the pipeline;
+here the Linalg lowering is simply part of it.
+
+The run is @matmul, as in the notebook. Step 2 adds two passes to this
+pipeline for the tiled matmul.}
+
+% =======================================================================
+\section{Step 2 --- Tiling, with a Transform Schedule}
+\begin{frame}[plain]\sectionpage\end{frame}
+
+\begin{frame}{Tiling}
+  \begin{center}
+  \begin{tikzpicture}[
+      lbl/.style={font=\scriptsize,color=scink},
+      sym/.style={font=\large,color=scgrey}]
+    % c += a x b to scale, one grid cell per 32 x 32 tile:
+    % c is 128 x 256 (4 x 8 tiles), a 128 x 512 (4 x 16), b 512 x 256 (16 x 8)
+    \fill[scaccent!70] (1.0,0) rectangle (1.2,0.2);
+    \visible<2->{
+      \fill[scaccent!35] (2.6,0) rectangle (5.8,0.2);
+      \fill[scaccent!35] (7.8,-1.6) rectangle (8.0,1.6);
+    }
+    \visible<3->{
+      % one k step: the fourth 32 x 32 tile of each strip
+      \fill[scaccent!70] (3.2,0) rectangle (3.4,0.2);
+      \fill[scaccent!70] (7.8,0.8) rectangle (8.0,1.0);
+    }
+    \foreach \x/\w/\h in {0/1.6/0.4, 2.6/3.2/0.4, 6.8/1.6/1.6} {
+      \draw[step=0.2,scgrey!45,very thin] (\x,-\h) grid (\x+\w,\h);
+      \draw[scblue] (\x,-\h) rectangle (\x+\w,\h);
+    }
+    \visible<3->{
+      \draw[-{Stealth[length=1.2mm]},scaccent] (2.6,0.6) --
+        node[above,lbl,color=scaccent]{\texttt{k}} (5.8,0.6);
+      \draw[-{Stealth[length=1.2mm]},scaccent] (8.6,1.6) --
+        node[right,lbl,color=scaccent]{\texttt{k}} (8.6,-1.6);
+    }
+    \node[lbl] at (0.8,-0.65) {\cd{c}, 128 $\times$ 256};
+    \node[lbl] at (4.2,-0.65) {\cd{a}, 128 $\times$ 512};
+    \node[lbl] at (7.6,-1.85) {\cd{b}, 512 $\times$ 256};
+    \node[sym] at (2.1,0) {\texttt{+=}};
+    \node[sym] at (6.3,0) {$\times$};
+    \draw[-{Stealth[length=1.5mm]},scaccent] (1.1,1.25) node[above,lbl]
+      {one 32 $\times$ 32 tile of \cd{c}} -- (1.1,0.25);
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.1em}
+  \begin{itemize}
+    \item<1-> Tiling splits a loop nest into two sets of loops:
+      \begin{itemize}
+        \item Outer loops that step from one tile to the next;
+        \item Inner loops that do the computation within a tile;
+        \item The same computation, in a different order.
+      \end{itemize}
+    \item<2-> Tile \cd{i} and \cd{j} by 32, and each 32 $\times$ 32 tile of
+      \cd{c} reads a 32-row strip of \cd{a} and a 32-column strip of \cd{b}.
+    \item<3-> Tile \cd{k} by 32 too, and each strip is read one
+      32 $\times$ 32 tile at a time: 16 steps along \cd{k} for each tile of
+      \cd{c}.
+  \end{itemize}
+\end{frame}
+\note{Exactly the same, to the last bit: tiling i and j does not reorder any
+sum, and tiling k keeps the additions for each element in k order. That is
+why the notebook checks the tiled result against numpy with the same
+tolerance as the untiled one.
+
+The order here, i and j first and then k inside the strips, is the order the
+exercise's schedule tiles in. The solution's subview of a subview is this
+picture in IR.}
+
+% =======================================================================
+\begin{frame}[fragile]{The Tile Is Still a \cd{linalg.matmul}}
+  \begin{columns}[t]
+    \begin{column}{0.35\textwidth}
+      \begin{center}\small\textbf{the op we started with}\end{center}
+\begin{lstlisting}[style=half,language=mlir]
+linalg.matmul
+    ins(%a, %b : memref<128x512xf32>,
+                 memref<512x256xf32>)
+    outs(%c : memref<128x256xf32>)
+\end{lstlisting}
+    \end{column}
+    \begin{column}{0.63\textwidth}
+      \begin{center}\small\textbf{tiled: the shape of it}\end{center}
+\begin{lstlisting}[style=half,language=mlir]
+(@\hl<2>{\lkw{scf.for} \%i = 0 \lkw{to} 128 \lkw{step} 32 \{}@)              // tile i
+  (@\hl<2>{\lkw{scf.for} \%j = 0 \lkw{to} 256 \lkw{step} 32 \{}@)            // tile j
+    (@\hl<2>{\lkw{scf.for} \%k = 0 \lkw{to} 512 \lkw{step} 32 \{}@)          // tile k
+      (@\hl<3>{\%a\_tile = \lkw{memref.subview} \%a[\%i, \%k] [32, 32]}@)
+      (@\hl<3>{\%b\_tile = \lkw{memref.subview} \%b[\%k, \%j] [32, 32]}@)
+      (@\hl<3>{\%c\_tile = \lkw{memref.subview} \%c[\%i, \%j] [32, 32]}@)
+      (@\hl<4>{\lkw{linalg.matmul} ins(\%a\_tile, \%b\_tile) outs(\%c\_tile)}@)
+    }
+  }
+}
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+  \vspace{0.4em}
+  \begin{itemize}
+    \item<2-> The outer loops are \cd{scf.for}s over \cd{i}, \cd{j} and
+      \cd{k}, each stepping by 32.
+    \item<3-> \cd{memref.subview} picks out a 32 $\times$ 32 tile of each
+      operand.
+    \item<4-> The inner loops are still one \cd{linalg.matmul}: the op we
+      started with, on 32 $\times$ 32 tiles.
+  \end{itemize}
+\end{frame}
+\note{The shape, not real output: the names are made up, and constants and
+types are left out. The real IR is nested differently: the exercise's
+schedule tiles i and j first and k second, so its k loop slices the strips
+the first step made rather than a, b and c directly. The solution, a few
+slides on, shows it.
+
+The point to land: tiling does not lower anything. What sits inside the
+tile loops is the same Linalg op, so it can be tiled again or lowered the
+usual way.}
+
+% =======================================================================
+\begin{frame}[fragile]{A Schedule: MLIR That Transforms MLIR}
+  \begin{center}
+  \begin{tikzpicture}[
+      box/.style={draw=scblue,fill=scwash,rounded corners=2pt,inner sep=5pt,
+                  font=\ttfamily\scriptsize,minimum height=2.4em,align=center},
+      lbl/.style={font=\scriptsize\itshape,color=scgrey,align=center},
+      arr/.style={-{Stealth[length=2mm]},draw=scgrey,thick}]
+    \node[box,draw=scaccent] (sch) at (0,0.65)
+      {tile\_linalg.mlir\\\normalfont\itshape the schedule};
+    \node[box] (pay) at (0,-0.65)
+      {linalg\_matmul.mlir\\\normalfont\itshape the payload};
+    \node[box] (int) at (5.0,0)
+      {mlir-opt\\\normalfont\itshape transform interpreter};
+    \node[box] (out) at (9.8,0)
+      {the payload,\\\normalfont\itshape tiled};
+    \draw[arr] (sch.east) -- (int.west);
+    \draw[arr] (pay.east) -- (int.west);
+    \draw[arr] (int) -- (out);
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.2em}
+  \begin{itemize}
+    \item<1-> In Session 1 a rewrite meant C++: a pattern, a plugin build,
+      and reloading \cd{mlir-opt}.
+    \item<2-> The \alert{transform dialect} lets you specify transformations
+      on operations, and apply them.
+    \item<3-> Its operations are transformations to apply. Its values are
+      \alert{handles} to operations, and an operation's results are handles
+      to the operations it creates.
+    \item<4-> No C++, no rebuild: edit the schedule, re-run the cell.
+  \end{itemize}
+\end{frame}
+\note{The notebook runs it as
+mlir-opt linalg\_matmul.mlir
+-{}-transform-preload-library=transform-library-paths=tile\_linalg.mlir
+-{}-transform-interpreter. The preload flag loads the schedule; the
+interpreter finds @\_\_transform\_main in it and applies it to the payload.
+
+Keep the schedule in its own file. A payload module that carries the
+transform attribute trips the transform verifier as soon as a later pass
+outlines a function into it.}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: \cd{tile\_linalg.mlir}, Step 1 of 3 --- Schedule}
+\begin{lstlisting}[language=mlir]
+module attributes {transform.with_named_sequence} {
+  (@\hl<2>{\lkw{transform.named\_sequence} @\_\_transform\_main(}@)
+      (@\hl<2>{\%root: !transform.any\_op \{transform.readonly\}) \{}@)
+    (@\hl<3>{\%ops = \lkw{transform.structured.match} interface\{LinalgOp\} in \%root}@)
+      : (!transform.any_op) -> !transform.any_op
+    (@\hl<5>{\%tiled, \%loops:2}@) = (@\hl<4>{\lkw{transform.structured.tile\_using\_for} \%ops}@)
+      (@\hl<4>{tile\_sizes [32, 32]}@)
+      : (!transform.any_op) -> ((@\hl<5>{!transform.any\_op, !transform.any\_op,}@)
+                                (@\hl<5>{!transform.any\_op}@))
+    transform.yield
+  }
+}
+\end{lstlisting}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<2-> The interpreter calls \cd{@\_\_transform\_main}, passing the
+      payload's top-level op as \cd{\%root}.
+    \item<3-> \cd{match} finds ops in the payload --- by \alert{interface},
+      not by name, so any Linalg op. \cd{\%ops} is a \alert{handle}: a
+      reference to payload ops, not a value in your program.
+    \item<4-> \cd{tile\_using\_for} takes one tile size per loop, in
+      \cd{iterator\_types} order. \cd{[32, 32]} tiles the first two.
+    \item<5-> It returns the tiled op, then one handle per loop it created:
+      \cd{\%loops:2}.
+  \end{itemize}
+\end{frame}
+\note{session2/tile\_linalg.mlir, as in the repo without its comments. It is a
+working schedule; they read it before changing anything.
+
+tile\_using\_for is itself written against the LinalgOp interface, which is
+why one schedule tiles matvec and matmul alike.}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: \cd{tile\_linalg.mlir}, Step 2 of 3 --- Applied to Matvec}
+\begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.6}{7.9}\selectfont]
+(@\hl<2>{\lkw{scf.for} \hl<4>{\%arg3} = \%c0 \lkw{to} \%c128 \lkw{step} \%c32 \{}@)                                 // i, by 32
+  (@\hl<2>{\lkw{scf.for} \hl<4>{\%arg4} = \%c0\_0 \lkw{to} \%c512 \lkw{step} \%c32\_1 \{}@)                          // j, by 32
+    %subview = memref.subview %arg0(@\hl<4>{[\%arg3, \%arg4]}@) (@\hl<3>{[32, 32]}@) [1, 1] : ... to memref<32x32xf32, ...>
+    %subview_2 = memref.subview %arg1(@\hl<4>{[\%arg4]}@) (@\hl<3>{[32]}@) [1] : ... to memref<32xf32, ...>
+    %subview_3 = memref.subview %arg2(@\hl<4>{[\%arg3]}@) (@\hl<3>{[32]}@) [1] : ... to memref<32xf32, ...>
+    (@\hl<5>{\lkw{linalg.matvec} ins(\%subview, \%subview\_2 : ...) outs(\%subview\_3 : ...)}@)
+  }
+}
+\end{lstlisting}
+  \vspace{0.4em}
+  \begin{itemize}
+    \item<2-> Two \cd{scf.for} tile loops stepping by 32: both of matvec's
+      loops are tiled.
+    \item<3-> \cd{memref.subview} takes a 32-wide \alert{view} of each
+      operand: offsets, sizes, strides. Nothing is copied.
+    \item<4-> Each slice follows its operand's indexing map. \cd{vec}'s is
+      \cd{(i, j) -> (j)}, so its slice moves with the \cd{j} loop
+      (\cd{\%arg4}); \cd{out}'s is \cd{(i, j) -> (i)}, so it moves with the
+      \cd{i} loop (\cd{\%arg3}). \cd{mat}'s is the identity: it moves with
+      both.
+    \item<5-> Inside, the original op on those slices. Still Linalg: tiling
+      restructures the loops, it lowers nothing.
+  \end{itemize}
+\end{frame}
+\note{The real output of the notebook's cell 23, compressed: the constants
+are left out, and each "..." is a type the slide has no room for. The slice
+types carry a layout, strided<[512, 1], offset: ?>: a slice keeps its
+parent's row stride.}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: \cd{tile\_linalg.mlir}, Step 3 of 3 --- Applied to Matmul}
+\begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.6}{7.9}\selectfont]
+scf.for %arg3 = %c0 to %c128 step %c32 {                                 // i, by 32
+  scf.for %arg4 = %c0_0 to %c256 step %c32_1 {                           // j, by 32
+    %subview = memref.subview %arg0[%arg3, 0] [32, (@\hl<2>{512}@)] [1, 1] : ... to memref<32x512xf32, ...>
+    %subview_2 = memref.subview %arg1[0, %arg4] [(@\hl<2>{512}@), 32] [1, 1] : ... to memref<512x32xf32, ...>
+    %subview_3 = memref.subview %arg2[%arg3, %arg4] [32, 32] [1, 1] : ... to memref<32x32xf32, ...>
+    linalg.matmul ins(%subview, %subview_2 : ...) outs(%subview_3 : ...)
+  }
+}
+\end{lstlisting}
+  \vspace{0.4em}
+  \begin{itemize}
+    \item<1-> The same schedule, unchanged: \cd{i} and \cd{j} tiled by 32,
+      as for matvec.
+    \item<2-> Matmul has a third loop, \cd{k}, and \cd{[32, 32]} leaves it
+      alone. The slices of \cd{a} and \cd{b} are 32 $\times$ \alert{512} and
+      \alert{512} $\times$ 32: the 512 is \cd{k}, still untiled.
+  \end{itemize}
+\end{frame}
+\note{The real output of cell 25, compressed the same way. These are the
+strips from the tiling slide: a 32-row strip of a, a 32-column strip of b, a
+32 by 32 tile of c.}
+
+% =======================================================================
+\begin{frame}[fragile]{Exercise 6 --- Tile Matmul's \cd{k} Loop}
+  \begin{center}\large
+    Extend \cd{session2/tile\_linalg.mlir} so that matmul's \cd{k} loop is
+    tiled by 32 too.
+  \end{center}
+  \vspace{0.1em}
+  \textbf{What is different from matvec:}
+  \begin{itemize}
+    \item Matmul has three loops; matvec has two.
+    \item Two things you may need: \cd{transform.structured.match
+      ops\{["linalg.matmul"]\}} matches by op name, and a tile size of
+      \cd{0} leaves that loop untiled.
+  \end{itemize}
+  \vspace{0.4em}
+  \textbf{Check as you go --- round-trip it} after every save:
+\begin{lstlisting}[style=plain,basicstyle=\ttfamily\small]
+!mlir-opt tile_linalg.mlir
+\end{lstlisting}
+  \vspace{0.1em}
+  \begin{itemize}
+    \item That checks the schedule is well-formed, not that it does what you
+      meant. For that, re-run the matmul cell to apply it, then the check
+      after it: matmul's innermost op must work on 32 $\times$ 32 slices.
+  \end{itemize}
+  \vspace{0.4em}
+  \begin{center}\color{scaccent}\large
+    10 minutes to write it --- then we walk through the solution.
+  \end{center}
+\end{frame}
+\note{Changing the shared step to [32, 32, 32] needs \%loops:3 as well. With
+\%loops:2 left as it was, the round-trip rejects it: "expected number of
+loops to tile (3) to match number of `loops` results (2)". With \%loops:3 it
+round-trips and tiles matmul, but the notebook's matvec cell (23), which runs
+after the exercise, fails on it: "too many tiles provided, expected at most 2
+found 3".
+
+After an edit, send them back to the matmul cell (25) and then the check
+(27). Not Ctrl+F8 on the check: that re-runs everything above it, the matvec
+cell included.
+
+Until the exercise is done, the notebook stops at the k-loop check (cell 27):
+"@matmul is not tiled in all three loops yet".}
+
+% =======================================================================
+\begin{frame}[fragile]{Solution --- \cd{tile\_linalg.mlir}, and What Changed}
+\begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.6}{7.9}\selectfont]
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(
+      %root: !transform.any_op {transform.readonly}) {
+    %ops = transform.structured.match interface{LinalgOp} in %root
+      : (!transform.any_op) -> !transform.any_op
+    %tiled, %loops:2 = transform.structured.tile_using_for %ops
+      tile_sizes [32, 32]
+      : (!transform.any_op) -> (!transform.any_op, !transform.any_op,
+                                !transform.any_op)
+    (@\df{\%matmul = transform.structured.match ops\{["linalg.matmul"]\} in \%root}@)
+      (@\df{: (!transform.any\_op) -> !transform.any\_op}@)
+    (@\df{\%tiled\_k, \%k\_loop = transform.structured.tile\_using\_for \%matmul}@)
+      (@\df{tile\_sizes [0, 0, 32]}@)
+      (@\df{: (!transform.any\_op) -> (!transform.any\_op, !transform.any\_op)}@)
+    transform.yield
+  }
+}
+\end{lstlisting}
+  \vspace{0.2em}
+  \begin{itemize}
+    \item<2-> You could also try \cd{[32, 32, 32]} in the first step.
+  \end{itemize}
+\end{frame}
+\note{The second match runs after the first tiling, so it finds the new
+linalg.matmul inside the i and j tile loops, and tiles that.
+
+If someone does try [32, 32, 32] in the first step: it tiles matmul, but
+the notebook also applies the schedule to matvec, which stops with "too many
+tiles provided, expected at most 2 found 3". The exercise slide's note has
+both errors.}
+
+% =======================================================================
+\begin{frame}[fragile]{Solution --- Tiled Matmul}
+\begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.4}{7.6}\selectfont]
+scf.for %arg3 = %c0 to %c128 step %c32 {                                  // i, by 32
+  scf.for %arg4 = %c0_0 to %c256 step %c32_1 {                            // j, by 32
+    (@\hl<3>{\%subview}@) = memref.subview %arg0[%arg3, 0] [32, 512] [1, 1] : ...
+    (@\hl<3>{\%subview\_2}@) = memref.subview %arg1[0, %arg4] [512, 32] [1, 1] : ...
+    %subview_3 = memref.subview %arg2[%arg3, %arg4] [32, 32] [1, 1] : ...
+    ...
+    (@\hl<2>{\lkw{scf.for} \%arg5 = \%c0\_4 \lkw{to} \%c512 \lkw{step} \%c32\_5 \{}@)                       // k, by 32
+      %subview_6 = memref.subview (@\hl<3>{\%subview}@)[0, %arg5] (@\hl<2>{[32, 32]}@) [1, 1] : ...
+      %subview_7 = memref.subview (@\hl<3>{\%subview\_2}@)[%arg5, 0] (@\hl<2>{[32, 32]}@) [1, 1] : ...
+      %subview_8 = memref.subview %subview_3[0, 0] [32, 32] [1, 1] : ...
+      (@\hl<4>{\lkw{linalg.matmul} ins(\%subview\_6, \%subview\_7 : \lkw{memref}<32x32xf32, ...>, \lkw{memref}<32x32xf32, ...>)}@)
+                    (@\hl<4>{outs(\%subview\_8 : \lkw{memref}<32x32xf32, ...>)}@)
+    }
+  }
+}
+\end{lstlisting}
+  \vspace{0.2em}
+  \begin{itemize}
+    \item<2-> A third tile loop, over \cd{k}, stepping by 32.
+    \item<3-> It takes a \alert{subview of a subview}: \cd{\%subview\_6} is cut
+      from \cd{\%subview}, the 32 $\times$ 512 strip of \cd{a} that tiling
+      \cd{i} and \cd{j} made, not from \cd{a} itself. The same for \cd{b}.
+    \item<4-> The check: every operand of the innermost \cd{linalg.matmul} is
+      32 $\times$ 32.
+  \end{itemize}
+\end{frame}
+\note{The real output with the solved schedule, compressed: the "..." after
+subview\_3 is three constants, the others are types. Run cells 25 to 29 in
+the walkthrough notebook as you go.
+
+Only the innermost op tells you all three loops are tiled. The 32 by 512
+subviews from the first step are still in the IR when the exercise is done,
+which is why the check looks at the linalg.matmul line and nothing else.}
+
+% =======================================================================
+\begin{frame}[fragile]{Lowering the Tiled Matmul}
+\begin{lstlisting}[style=plain,basicstyle=\ttfamily\scriptsize]
+convert-linalg-to-loops
+(@\df{expand-strided-metadata}@)    (@\only<2>{\color{scaccent}\frenchspacing $\leftarrow$ subviews become pointer and stride arithmetic \dots}@)
+(@\df{lower-affine}@)               (@\only<3>{\color{scaccent}\frenchspacing $\leftarrow$ \dots{} which comes out as affine.apply: make it arith}@)
+(@{\normalfont\itshape then Session 1's CPU lowering pipeline}@)
+\end{lstlisting}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<1-> Tiling introduced \cd{memref.subview}, which the step 1 pipeline
+      never saw. Two more passes lower it, right after
+      \cd{convert-linalg-to-loops}.
+    \item<4-> Same numpy check as step 1:
+  \end{itemize}
+  \vspace{0.2em}
+  \visible<4->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
+\end{frame}
+\note{Cell 29 redefines CPU\_LOWERING\_PIPELINE with the two passes, then runs
+the tiled matmul. The later cells that compile a file use it too, which does
+nothing to the untiled one.
+
+Leave expand-strided-metadata out and the JIT stops on a bare "LLVM
+Translation failed for operation: builtin.unrealized\_conversion\_cast".
+Leave lower-affine out after it and the ExecutionEngine fails to build with
+no further detail.}
+
+% =======================================================================
+\section{Step 3 --- Did Matmul Get Faster?}
+\begin{frame}[plain]\sectionpage\end{frame}
+
+\begin{frame}{Timing It}
+  \begin{itemize}
+    \item<1-> Same computation, same numbers, same single thread: untiled
+      against tiled.
+    \item<2-> \cd{benchmark} keeps the \alert{fastest} of five runs. Colab is
+      a shared machine, so a slow run mostly measures your neighbours.
+  \end{itemize}
+  \vspace{1em}
+  \visible<3->{
+  \begin{center}\large
+    \begin{tabular}{lr}
+      untiled & 9.0 ms \\
+      tiled   & 0.8 ms \\
+      \hline
+      speedup & \alert{10.9$\times$} \\
+    \end{tabular}
+  \end{center}
+  \begin{center}\scriptsize\color{scgrey}
+    one run on a desktop CPU --- yours will differ
+  \end{center}}
+\end{frame}
+\note{Run cell 31 live and read out the room's numbers rather than these.
+These are from the presenter's machine (a Threadripper 7960X); the shapes
+changed to 128, 256, 512 after the last Colab measurement, so Colab's figure
+for them is not known yet.}
+
+% =======================================================================
+\begin{frame}{Why So Much Faster? Read the Machine Code}
+  \begin{itemize}
+    \item<1-> The usual answer is the cache. Not here: the three matrices
+      together are under 1 MB, small enough to sit largely in cache untiled.
+    \item<2-> What changed is the \alert{code LLVM generated}. The next cell
+      dumps the JIT's object code and counts the float multiplies and adds in
+      \cd{matmul}:
+  \end{itemize}
+  \vspace{0.3em}
+  \visible<2->{
+  \begin{center}
+    \begin{tabular}{lll}
+      \textbf{scalar} & \cd{mulss}, \cd{addss}, \dots & one float at a time \\
+      \textbf{packed} & \cd{mulps}, \cd{addps}, \dots &
+        4, 8 or 16 floats at once, in \cd{xmm}, \cd{ymm}, \cd{zmm} \\
+    \end{tabular}
+  \end{center}}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<3-> Untiled: \alert{scalar only}. Tiled: \alert{packed}, 8 or 16
+      floats at once, depending on the CPU.
+  \end{itemize}
+\end{frame}
+\note{Cell 33 installs objdump if it is missing; cell 34 is the count. On the
+presenter's machine (AVX-512) the tiled matmul reported 16 floats at once;
+the Colab CPUs report 8 or 16.
+
+Why packed, if someone asks: in a tile, k runs a constant 32 times and LLVM
+unrolls it completely. The j loop is then innermost, its iterations are
+independent, and LLVM vectorizes it. Untiled, the innermost loop is the k
+reduction, a running float sum; vectorizing it would reorder the additions,
+so LLVM does not. Both are cost-model decisions: tiles of 16 and 32 get
+through on every CPU Colab hands out, 24 and 64 stay scalar
+(session2/README.md has the table).}
+
+% =======================================================================
+\begin{frame}{Recap}
+  \begin{center}
+  \begin{tikzpicture}[
+      box/.style={draw=scblue,fill=scwash,rounded corners=2pt,inner sep=5pt,
+                  font=\ttfamily\scriptsize,minimum height=2.4em,align=center},
+      lbl/.style={font=\scriptsize\itshape,color=scgrey,align=center},
+      arr/.style={-{Stealth[length=2mm]},draw=scgrey,thick}]
+    \node[box] (op) at (0,0) {linalg.matmul};
+    \node[box,draw=scaccent] (tiled) at (4.6,0)
+      {linalg.matmul\\\normalfont\itshape on 32$\times$32 tiles};
+    \node[box] (run) at (10.0,0)
+      {JIT + run\\\normalfont\itshape CPU, one thread};
+    \draw[arr,draw=scaccent] (op) -- node[lbl,above]{tile\_linalg.mlir} (tiled);
+    \draw[arr] (tiled) -- node[lbl,above]{loops + Session 1's\\pipeline} (run);
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.3em}
+  \begin{itemize}
+    \item<2-> Linalg ops describe a computation --- loops, maps, body ---
+      through one interface, \cd{LinalgOp}.
+    \item<3-> A schedule written against that interface tiles any Linalg op.
+      No C++, no rebuild.
+  \end{itemize}
+\end{frame}
+\note{End here.}
+
+\end{document}
