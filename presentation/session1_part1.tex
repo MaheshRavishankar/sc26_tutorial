@@ -17,9 +17,10 @@
 \begin{frame}[plain]
   \titlepage
 \end{frame}
-\note{Pre-run setup cells 0--7 of the walkthrough notebook before the room
-fills: the toolchain download and the first cmake configure are the two
-slowest things in the day and neither teaches anything.
+\note{Before the room fills, pre-run the walkthrough notebook's setup (cells
+2--8) and its first plugin build (cells 20 and 21): the toolchain download
+and the first build are the two slowest things in the day and neither
+teaches anything.
 
 Plan for the 90 minutes: 10 setup, 30 step 1, 28 defining the op,
 17 writing the lowering, 5 wrap. Exercise 1 is 12 minutes of keyboard time,
@@ -83,9 +84,8 @@ This diagram comes back near the end, once the pass is written.}
       Edit the file, save, and re-run the cells that build and run it.
     \item<2-> \textbf{We walk through each notebook cell together}, as a
       class.
-    \item<3-> \textbf{Every exercise has a complete matrix-\emph{vector}
-      version next to it} --- same job, one dimension smaller. That is your
-      reference.
+    \item<3-> \textbf{For each exercise there is a solved
+      matrix-\emph{vector} example} that you can use as a reference.
     \item<4-> \textbf{Colab trick:} lost your place? \cd{Ctrl+F8} runs every
       cell above the one you are on.
   \end{itemize}
@@ -433,7 +433,14 @@ blas.matmul %a, %b, %out
 is not shorter -- it is more \emph{informative}. A tile, a distribute, a fuse
 becomes a rewrite on one op rather than a loop-dependence analysis, and
 everything Session 2 does with the transform dialect is only possible because
-the op says what it is.}
+the op says what it is.
+
+Notebook step 2 starts here. Have everyone run its first cells now: they
+build the plugin as shipped (1-2 minutes the first time) and round-trip
+matvec\_custom.mlir through it, so the build runs while you talk through this
+slide and the next. ninja is running mlir-tblgen over the dialect's .td files
+to generate the op classes, parsers and printers, then compiling them with
+the hand-written .cpp into one shared object.}
 
 % =======================================================================
 \begin{frame}{Anatomy of a Dialect}
@@ -826,12 +833,11 @@ compiler. Undo it afterwards.}
     \item<8-> When a change seems to have no effect, this is why. Every time.
   \end{itemize}
 \end{frame}
-\note{Say the last two bullets out loud before the first build, not after.
-This is the single most common lost-ten-minutes in the session.
-
-While it builds (1-2 min first time): ninja is running mlir-tblgen over their
-.td.txt to generate a class declaration, a parser, a printer and builders, then
-compiling that together with the hand-written .cpp into one shared object.
+\note{Say the last two bullets out loud: this is the single most common
+lost-ten-minutes in the session. The notebook built the plugin once before the
+exercise; after every edit to .td.txt or .cpp, the rebuild cell re-runs
+mlir-tblgen over their .td.txt to generate a class declaration, a parser, a
+printer and builders, then recompiles that with the hand-written .cpp.
 
 If the build fails: read the FIRST error, not the last. A TableGen syntax error
 cascades into dozens of C++ errors about a class that was never generated.}

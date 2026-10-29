@@ -17,11 +17,9 @@ provided.** Nothing has to be typed into Colab — the cells parse, lower, JIT
 and check whatever is currently in the repo, so the workflow is: edit a file
 from Colab's file browser, save, re-run the cells.
 
-The notebooks work on **matrix-matrix product** throughout. Each thing the
-attendee writes has a **complete matrix-vector version next to it** in the
-same directory, doing the same job one dimension smaller — that is the
-reference, pointed at from the surrounding markdown rather than run as its
-own cells.
+The notebooks work on **matrix-matrix product** throughout. For each
+exercise there is a **solved matrix-vector example**, in the same directory,
+that attendees can use as a reference.
 
 Both ops **accumulate**: `out[i, j] += sum_k a[i, k] * b[k, j]`. Every
 reduction therefore starts from `memref.load %out[...]` rather than from
@@ -54,8 +52,9 @@ need to open those.
 
 Colab's file browser is also not how the notebooks open files. Each edit
 point has a cell calling `google.colab.files.view()` on the file to change
-*and* on its reference, so both open in the editor pane side by side. Those
-cells are Colab-only; running locally, skip them and use your own editor.
+*and* on its reference, so both open in the editor pane side by side.
+Outside Colab those cells print the paths instead, for you to open in your
+own editor.
 
 ### Where a half-finished notebook stops
 
@@ -93,15 +92,16 @@ with an unrelated-looking ``Dialect `blas' not found``.
 
 No GPU runtime needed. Step numbers are local to this notebook.
 
-- **Step 1 — the loop nest, by hand.** Write `matmul_scf.mlir` as nested
-  `scf.for` loops over `memref`s. The cells round-trip it through `mlir-opt`,
-  lower it through the LLVM dialect, JIT-compile it, and check it against
-  numpy. Reference: `matvec_scf.mlir`.
+- **Step 1 — the loop nest, by hand.** Exercise 1: write `matmul_scf.mlir`
+  as nested `scf.for` loops over `memref`s. The cells round-trip it through
+  `mlir-opt`, lower it through the LLVM dialect, JIT-compile it, and check it
+  against numpy. Reference: `matvec_scf.mlir`.
 - **Step 2 — the `blas` dialect.** `blas.matmul` is a single custom op
   standing in for the whole computation, lowered to step 1's SCF form by
-  `convert-blas-to-scf`. Two rounds: define the op (ODS + verifier), then
-  write `MatMulToSCFPattern` and register it. References: the `matvec`
-  version of each, next to the `TODO`.
+  `convert-blas-to-scf`. The step first builds the plugin as shipped and
+  round-trips `matvec_custom.mlir` through it. Then three exercises: the ODS
+  (2) and the verifier (3) define the op, and `MatMulToSCFPattern` (4)
+  lowers it. References: the `matvec` version of each, next to the `TODO`.
 
 ## Part 2 — GPU (`session1_part2_gpu.ipynb`)
 
@@ -119,7 +119,7 @@ same computation coming out the other way round when a pass picks the mapping
 instead. No timing — just the argument.
 
 - **Step 2 — lowering `blas` straight to GPU.** `convert-blas-to-gpu` builds
-  step 1's `gpu.launch` shape programmatically. The exercise is
+  step 1's `gpu.launch` shape programmatically. The exercise, Exercise 5, is
   `MatMulToGPUPattern`: its setup (operands, host registration, constants,
   sizes) is provided, and attendees write the `gpu::LaunchOp` and its body —
   the reduction loop — then register it. Reference: `MatVecToGPUPattern` in
@@ -172,20 +172,38 @@ schedule to matvec first, where distributing a reduction loop is a race — so
 running that notebook on that branch stops, by design, at exactly the check
 that exists to catch it.
 
-## Running locally (e.g. VS Code) instead of Colab
+## Running locally in VS Code
 
-Both notebooks' Setup cells check for an already-built toolchain / already-cloned
-repo before downloading or cloning anything, via two environment variables:
+On Linux x86-64 (glibc 2.35 or newer, e.g. Ubuntu 22.04 or later), you can
+run the notebooks in VS Code instead of Colab:
 
-- `MLIR_TUTORIAL_INSTALL_DIR` — path to an existing toolchain install
-  (skips the download entirely if `$MLIR_TUTORIAL_INSTALL_DIR/bin/mlir-opt` exists).
-- `MLIR_TUTORIAL_REPO_DIR` — path to an existing checkout of this repo
-  (skips the `git clone` entirely if the directory exists).
+1. Clone the repo: `git clone https://github.com/MaheshRavishankar/sc26_tutorial`.
+   For Part 2, also `git checkout session1-part1-solution` in it: on Colab
+   the notebook clones that branch itself, but it uses your clone as it is.
+2. Download the toolchain,
+   [`mlir-tutorial-llvm.tar.gz`](https://github.com/MaheshRavishankar/sc26_tutorial/releases/download/session1-toolchain-v1/mlir-tutorial-llvm.tar.gz),
+   and untar it:
+   `mkdir mlir-tutorial-llvm && tar xf mlir-tutorial-llvm.tar.gz -C mlir-tutorial-llvm --strip-components=1`
+3. Before you start a kernel, create a file `.env` in the repo root with two
+   lines, using absolute paths:
+   ```
+   MLIR_TUTORIAL_INSTALL_DIR=/path/to/mlir-tutorial-llvm
+   MLIR_TUTORIAL_REPO_DIR=/path/to/sc26_tutorial
+   ```
+   VS Code passes `.env` to notebook kernels (the `python.envFile` setting).
+   With plain Jupyter, export the two variables before starting it instead.
+4. Open the repo folder in VS Code, then a notebook, and pick a Python 3.13
+   kernel with `ipykernel`, `numpy` and `requests` installed. It has to be
+   3.13, because the toolchain's MLIR Python bindings are built for it. Both
+   notebooks build the `blas` plugin, so you also need `cmake`, `ninja` and a
+   C++ compiler.
+5. Part 2 also needs an NVIDIA GPU and a CUDA 12 toolkit. If the toolkit is
+   not in `/usr/local/cuda`, add `CUDA_HOME=/path/to/cuda` to `.env`.
 
-Set both before starting your Jupyter kernel and the notebooks run unmodified,
-using local paths instead of Colab's `/content/...` and this repo's GitHub
-releases/clone. Neither variable is set in Colab, so this doesn't change
-Colab's behavior at all.
+The setup cells then use your toolchain and your clone: they skip the
+download when `$MLIR_TUTORIAL_INSTALL_DIR/bin/mlir-opt` exists, and the clone
+when `$MLIR_TUTORIAL_REPO_DIR` does. Neither variable is set on Colab, so
+nothing changes there.
 
 ## `blas-dialect/`
 
