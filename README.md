@@ -16,6 +16,9 @@ installed locally.
 For the two GPU parts, switch the runtime to a T4 GPU (Runtime → Change
 runtime type) before running any cell.
 
+To run them in VS Code on your own Linux machine instead, see
+[`RUNNING_LOCALLY.md`](RUNNING_LOCALLY.md).
+
 ## Sessions
 
 - **Session 1 — Introduction to MLIR** (`session1/`): attendees build up a

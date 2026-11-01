@@ -24,8 +24,8 @@ teaches anything.
 
 Plan for the 90 minutes: 10 setup, 30 step 1, 28 defining the op,
 17 writing the lowering, 5 wrap. Exercise 1 is 12 minutes of keyboard time,
-exercises 2+3 another 12, exercise 4 ten. If you are behind at exercise 4,
-type it yourself and narrate.}
+exercise 2 (both parts) another 12, exercise 3 ten. If you are behind at
+exercise 3, type it yourself and narrate.}
 
 % =======================================================================
 \begin{frame}{One Computation, Two Paths}
@@ -90,8 +90,9 @@ This diagram comes back near the end, once the pass is written.}
       cell above the one you are on.
   \end{itemize}
 \end{frame}
-\note{Four exercises. The matvec reference is the answer sheet for the shape,
-not for the content -- say that explicitly or they will expect to copy it.
+\note{Three exercises, the second in two parts. The matvec reference is the
+answer sheet for the shape, not for the content -- say that explicitly or they
+will expect to copy it.
 Each reference is introduced on its own exercise slide.
 
 Ctrl+F8 is "Run before". There is no menu entry for it in the current Colab
@@ -515,11 +516,11 @@ func.func @matmul(%a: memref<4x3xf32>, %b: memref<3x5xf32>,
   \begin{itemize}
     \item<4-> Once you have defined the operation, the same round-trip
       \alert{succeeds}: \cd{mlir-opt} parses the file and prints it back
-      unchanged.
+      in the same syntax.
   \end{itemize}
 \end{frame}
 \note{Parsing the file proves their assemblyFormat accepts the syntax;
-printing it back identically proves it produces the same syntax. One check,
+printing it back proves it produces the same syntax. One check,
 both directions -- which is what the assembly-format step is about.
 
 The real file has three comment lines above the function, which is why the
@@ -706,8 +707,8 @@ LogicalResult MatVecOp::verify() {
 \end{frame}
 
 % =======================================================================
-\begin{frame}{Exercises 2 and 3 --- Define the Op}
-  \textbf{2. The ODS}\quad \cd{blas-dialect/include/Blas/BlasOps.td.txt}
+\begin{frame}{Exercise 2 --- Define the Op}
+  \textbf{2a. The ODS}\quad \cd{blas-dialect/include/Blas/BlasOps.td.txt}
   \begin{itemize}
     \item Define \cd{Blas\_MatMulOp} where the \cd{TODO} is, modelled on
       \cd{Blas\_MatVecOp} right above it.
@@ -715,7 +716,7 @@ LogicalResult MatVecOp::verify() {
       Include \mbox{\cd{let hasVerifier = 1;}}
   \end{itemize}
   \vspace{0.8em}
-  \textbf{3. The verifier}\quad \cd{blas-dialect/lib/BlasOps.cpp}
+  \textbf{2b. The verifier}\quad \cd{blas-dialect/lib/BlasOps.cpp}
   \begin{itemize}
     \item Write \mbox{\cd{LogicalResult MatMulOp::verify()}}, modelled on
       \mbox{\cd{MatVecOp::verify()}}.
@@ -724,7 +725,7 @@ LogicalResult MatVecOp::verify() {
   \vspace{0.8em}
   \begin{center}\small\color{scgrey}
     These two go together: \cd{hasVerifier = 1} declares \cd{verify()},
-    and exercise 3 defines it.
+    and 2b defines it.
   \end{center}
   \vspace{0.4em}
   \begin{center}\color{scaccent}\large
@@ -851,7 +852,7 @@ cascades into dozens of C++ errors about a class that was never generated.}
   \begin{itemize}
     \item<2-> Python's \cd{Context} knows nothing about our plugin, so
       anything involving \cd{blas} shells out to \cd{mlir-opt}.
-    \item<3-> Success looks like \alert{the file, printed back unchanged}.
+    \item<3-> Success looks like \alert{\cd{blas.matmul} printed back in the same syntax}.
   \end{itemize}
   \vspace{0.5em}
   \visible<4->{\errbox{matmul\_custom.mlir:5:3: error: custom op 'blas.matmul' is unknown}}
@@ -1135,7 +1136,7 @@ struct LowerBlasToSCFPass
 output has constants where the pattern built memref.dim.}
 
 % =======================================================================
-\begin{frame}{Exercise 4 --- Write the Lowering}
+\begin{frame}{Exercise 3 --- Write the Lowering}
   \begin{center}\large
     \cd{MatMulToSCFPattern} in\\\cd{blas-dialect/lib/LowerBlasToSCF.cpp}
   \end{center}

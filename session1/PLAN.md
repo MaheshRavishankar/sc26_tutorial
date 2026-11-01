@@ -26,7 +26,8 @@ source files, because copy-pasting code into Colab cells is awkward.
    `BlasOps.td.txt` (reading `Blas_MatVecOp` above it), and
    `MatMulOp::verify()` in `BlasOps.cpp` (reading `MatVecOp::verify()`, and
    calling the shared `verifyDimsMatch` helper). Check: `mlir-opt`
-   round-trips `matmul_custom.mlir` unchanged.
+   round-trips `matmul_custom.mlir`, printing `blas.matmul` back in the
+   same syntax.
 
 4. **Step 2, round two -- write the lowering.** Attendees add
    `MatMulToSCFPattern` to `LowerBlasToSCF.cpp` and register it, reading

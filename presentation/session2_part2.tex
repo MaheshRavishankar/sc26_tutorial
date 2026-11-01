@@ -459,7 +459,7 @@ The grids are to scale, one cell per 32 by 32 tile of c; the thread's row and
 element are drawn larger than they are.}
 
 % =======================================================================
-\begin{frame}[fragile]{Exercise 7 --- Distribute Matmul along Columns Too}
+\begin{frame}[fragile]{Exercise 6 --- Distribute Matmul along Columns Too}
   \begin{center}\large
     Modify \cd{session2/distribute\_linalg.mlir} so that each thread computes
     one \mbox{\cd{c[i, j]}}, in blocks of 32 $\times$ 32 threads: the

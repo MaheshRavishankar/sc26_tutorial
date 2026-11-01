@@ -290,32 +290,7 @@ before adding a cell.
 
 ## Running locally in VS Code
 
-On Linux x86-64 (glibc 2.35 or newer, e.g. Ubuntu 22.04 or later), you can
-run the notebooks in VS Code instead of Colab:
-
-1. Clone the repo: `git clone https://github.com/MaheshRavishankar/sc26_tutorial`
-2. Download the toolchain,
-   [`mlir-tutorial-llvm.tar.gz`](https://github.com/MaheshRavishankar/sc26_tutorial/releases/download/session1-toolchain-v1/mlir-tutorial-llvm.tar.gz),
-   and untar it:
-   `mkdir mlir-tutorial-llvm && tar xf mlir-tutorial-llvm.tar.gz -C mlir-tutorial-llvm --strip-components=1`
-3. Before you start a kernel, create a file `.env` in the repo root with two
-   lines, using absolute paths:
-   ```
-   MLIR_TUTORIAL_INSTALL_DIR=/path/to/mlir-tutorial-llvm
-   MLIR_TUTORIAL_REPO_DIR=/path/to/sc26_tutorial
-   ```
-   VS Code passes `.env` to notebook kernels (the `python.envFile` setting).
-   With plain Jupyter, export the two variables before starting it instead.
-4. Open the repo folder in VS Code, then a notebook, and pick a Python 3.13
-   kernel with `ipykernel`, `numpy` and `requests` installed. It has to be
-   3.13, because the toolchain's MLIR Python bindings are built for it.
-5. Part 2 also needs an NVIDIA GPU and a CUDA 12 toolkit. If the toolkit is
-   not in `/usr/local/cuda`, add `CUDA_HOME=/path/to/cuda` to `.env`.
-
-The setup cells then use your toolchain and your clone: they skip the
-download when `$MLIR_TUTORIAL_INSTALL_DIR/bin/mlir-opt` exists, and the clone
-when `$MLIR_TUTORIAL_REPO_DIR` does. Neither variable is set on Colab, so
-nothing changes there.
+See [`RUNNING_LOCALLY.md`](../RUNNING_LOCALLY.md).
 
 Nothing in this session needs compiling: the exercises are `.mlir` files that
 `mlir-opt` re-reads on every run. Part 1's object-code cell also uses
