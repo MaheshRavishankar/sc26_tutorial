@@ -8,7 +8,7 @@ include "mlir/Pass/PassBase.td"
 // matvec pattern ships complete; the matmul pattern is the exercise.
 //===----------------------------------------------------------------------===//
 
-def LowerBlasToSCFPass : Pass<"convert-blas-to-scf", "::mlir::ModuleOp"> {
+def LowerBlasToSCFPass : Pass<"convert-blas-to-scf", "::mlir::func::FuncOp"> {
   let summary = "Lower blas ops to scf.for loops";
   let dependentDialects = [
     "::mlir::scf::SCFDialect",
@@ -17,7 +17,7 @@ def LowerBlasToSCFPass : Pass<"convert-blas-to-scf", "::mlir::ModuleOp"> {
   ];
 }
 
-def LowerBlasToGPUPass : Pass<"convert-blas-to-gpu", "::mlir::ModuleOp"> {
+def LowerBlasToGPUPass : Pass<"convert-blas-to-gpu", "::mlir::func::FuncOp"> {
   let summary = "Lower blas ops to gpu.launch kernels";
   let dependentDialects = [
     "::mlir::gpu::GPUDialect",

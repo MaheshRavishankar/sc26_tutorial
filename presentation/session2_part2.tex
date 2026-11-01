@@ -3,10 +3,8 @@
 %
 % Build:  make            (the deck PDF)
 % See presentation/README.md.
-\providecommand{\notesmode}{0}
 \documentclass[aspectratio=169,10pt]{beamer}
 \usepackage{sc26}
-\ifnum\notesmode=1 \setbeameroption{show notes}\fi
 
 \title{Introduction to MLIR}
 \subtitle{Session 2, Part 2 --- Distributing Linalg on the GPU}
@@ -18,18 +16,6 @@
 \begin{frame}[plain]
   \titlepage
 \end{frame}
-\note{Pre-run setup cells 0--9 of the walkthrough notebook on a T4 runtime
-before the room fills: the toolchain download is the slowest thing in this
-part and teaches nothing.
-
-One exercise, widening the distribution schedule: about 10 minutes of
-keyboard time. Step 1 is read and run together; nobody types anything in it.
-
-Known problem: the walkthrough notebook clones session2-part2-solution, whose
-schedule is for matmul only. Its matvec cell (19) stops on the race check
-("tiling is not thread safe at axis \#1") on the first pass. Until that is
-settled, run step 2's matvec and provided-schedule matmul cells (19 to 24)
-from the attendee notebook.}
 
 % =======================================================================
 \begin{frame}{Setup}
@@ -38,15 +24,11 @@ from the attendee notebook.}
       \cd{Change runtime type $\to$ T4 GPU}, before running any cell.
     \item<2-> \textbf{It is a fresh runtime.} Nothing from Part 1 carries
       over, so the notebook downloads the toolchain again.
-    \item<3-> \textbf{You edit one MLIR file, a schedule,} as in Part 1: edit,
+    \item<3-> \textbf{The exercise edits one MLIR file, a schedule,} as in Part 1: edit,
       save, re-run the cell. No C++.
     \item<4-> \textbf{One exercise:} distribute matmul along its columns too.
   \end{itemize}
 \end{frame}
-\note{Change runtime type is under the Runtime menu, or the arrow next to
-Connect at the top right. Ctrl+F8 (run every cell above) catches someone up
-before the exercise; after it, not on the exercise's cells, for the reason in
-the exercise slide's note.}
 
 % =======================================================================
 \begin{frame}{Same Tiling, onto the GPU}
@@ -87,10 +69,6 @@ the exercise slide's note.}
       the threads, and builds the \cd{gpu.launch}.
   \end{itemize}
 \end{frame}
-\note{Step 1 is the payloads: Part 1's two files with the host registration
-from Session 1 Part 2. Step 2 is the schedule, including how it maps the
-loops onto the GPU, the exercise, and why the mapping it asks for is the
-right one for memory.}
 
 % =======================================================================
 \section{Step 1 --- The GPU Payloads}
@@ -121,15 +99,6 @@ module {
     \item<3-> The op is Part 1's \cd{linalg.matvec}, unchanged.
   \end{itemize}
 \end{frame}
-\note{As in the repo, without the header comment. linalg\_matmul\_gpu.mlir is
-the same, around Part 1's linalg.matmul. Both files are complete; round-trip
-them in the notebook (cell 13) as you show them. The cast to an unranked
-memref is only because gpu.host\_register takes one.
-
-Nothing unregisters a buffer. If a registered buffer is freed and a later
-numpy array lands on its address, the kernel writes somewhere numpy is not
-reading and the result comes back all zeros. That is why the notebook keeps
-every buffer it hands a kernel in REGISTERED.}
 
 % =======================================================================
 \section{Step 2 --- Distributing, with a Transform Schedule}
@@ -172,17 +141,6 @@ every buffer it hands a kernel in REGISTERED.}
       \cd{tile\_using\_forall} only warns: \cd{tiling is not thread safe}.
   \end{itemize}
 \end{frame}
-\note{Both listings are the shape, not real output: the names are made up and
-the types left out. The mapping attribute is printed exactly like that on a
-real scf.forall.
-
-The forall counts tiles, 4, and each iteration computes its own offset; the
-for loop steps through the offsets directly.
-
-The real warning is "warning: tiling is not thread safe at axis \#1" (the
-axis is the loop's position). mlir-opt still emits the loops and exits 0,
-which is why every notebook cell that applies the schedule keeps its stderr
-and fails on that text.}
 
 % =======================================================================
 \begin{frame}{Blocks and Threads, from Two Tilings}
@@ -238,15 +196,6 @@ and fails on that text.}
       \cd{blockIdx * blockDim + threadIdx}.
   \end{itemize}
 \end{frame}
-\note{Recall from Session 1 Part 2: a launch is a grid of blocks, each block a
-group of threads, and every thread knows its block id, its thread id and the
-block size.
-
-4 blocks of 32 threads is 128 threads, one per element of out: the same work
-as Session 1 Part 2's matvec kernel, which used one block of numRows threads.
-
-Not to scale: out is drawn as four boxes, and the zoomed block has its 32
-rows drawn large.}
 
 % =======================================================================
 \begin{frame}[fragile]{Reference: \cd{distribute\_linalg.mlir}, Step 1 of 4 --- The Tilings}
@@ -279,13 +228,6 @@ module attributes {transform.with_named_sequence} {
       returns it, and the second tiles it.
   \end{itemize}
 \end{frame}
-\note{session2/distribute\_linalg.mlir, as in the repo without its comments;
-the "next" comment stands for the lines on the next slide. It runs the way
-Part 1's schedule did: -{}-transform-preload-library, then
--{}-transform-interpreter (cell 19). Like Part 1's, it is a working
-schedule, written for matvec; they read it before changing anything.
-
-\%blocks and \%threads are handles to the two scf.foralls; nothing uses them.}
 
 % =======================================================================
 \begin{frame}[fragile]{Reference: \cd{distribute\_linalg.mlir}, Step 2 of 4 --- Building the Kernel}
@@ -316,12 +258,6 @@ module attributes {transform.with_named_sequence} {
       each block: 32 threads in x.
   \end{itemize}
 \end{frame}
-\note{The rest of the same file. sync\_after\_distribute = false leaves out a
-gpu.barrier after the thread loop, which this kernel does not need: no thread
-reads what another wrote.
-
-Both ops read the mapping attributes the tilings put on the loops. A loop
-without one is an error: "scf.forall op requires a mapping attribute".}
 
 % =======================================================================
 \begin{frame}[fragile]{Reference: \cd{distribute\_linalg.mlir}, Step 3 of 4 --- Applied to Matvec}
@@ -355,14 +291,6 @@ without one is an error: "scf.forall op requires a mapping attribute".}
       Linalg: the next step lowers it.
   \end{itemize}
 \end{frame}
-\note{The real output of cell 19, with mlir-opt -{}-mlir-print-local-scope so
-the affine map is written out in place; the notebook prints it as \#map,
-defined at the top. Compressed: each "..." after a colon is a type, the bare
-"..." lines are the unused y and z ids and two constants, and the casts and
-host registrations above the launch are left out.
-
-vec is used whole because its map, (i, j) -> (j), has no i in it: tiling i
-does not slice it.}
 
 % =======================================================================
 \begin{frame}[fragile]{Reference: Step 4 of 4 --- Compiling and Execution}
@@ -388,16 +316,6 @@ does not slice it.}
   \vspace{0.2em}
   \visible<5->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
 \end{frame}
-\note{Cell 21. GPU\_LOWERING\_PIPELINE is these passes, with
-llvm-request-c-wrappers as well. The notebook reads the chip from nvidia-smi
-rather than hard-coding sm\_75.
-
-Lowered, the body is a one-trip loop over the thread's row around the
-512-step reduction over j.
-
-Without engine.initialize() every CUDA call fails with
-CUDA\_ERROR\_INVALID\_HANDLE: the compiled kernel is loaded by a global
-constructor that nothing else runs.}
 
 % =======================================================================
 \begin{frame}[fragile]{The Same Schedule, on Matmul}
@@ -451,12 +369,6 @@ linalg.matmul ins(%subview_9, %subview_10 : memref<1x512xf32, ...>, memref<512x2
       computes one \cd{c[i, j]}, with the columns on x and the rows on y.
   \end{itemize}
 \end{frame}
-\note{Cells 23 and 24: the launch, and a run that passes the numpy check. It
-is correct, just 128 threads for 32 768 elements, each doing 256 x 512
-multiply-adds.
-
-The grids are to scale, one cell per 32 by 32 tile of c; the thread's row and
-element are drawn larger than they are.}
 
 % =======================================================================
 \begin{frame}[fragile]{Exercise 6 --- Distribute Matmul along Columns Too}
@@ -475,14 +387,14 @@ element are drawn larger than they are.}
     \item Each block is 32 $\times$ 32 threads.
   \end{itemize}
   \vspace{0.3em}
-  \textbf{Check as you go --- round-trip it} after every save:
+  \textbf{Check after every save --- round-trip it}:
 \begin{lstlisting}[style=plain,basicstyle=\ttfamily\small]
 !mlir-opt distribute_linalg.mlir
 \end{lstlisting}
   \vspace{0.1em}
   \begin{itemize}
-    \item That checks the schedule is well-formed, not that it does what you
-      meant. For that, run the check under \emph{Matmul, distributed along
+    \item That checks the schedule is well-formed, not that it does what was
+      intended. For that, run the check under \emph{Matmul, distributed along
       columns too}: matmul's innermost op must write a 1 $\times$ 1 slice of
       \cd{c}, cut at \cd{[\%thread\_id\_y, \%thread\_id\_x]}.
   \end{itemize}
@@ -491,24 +403,6 @@ element are drawn larger than they are.}
     10 minutes to write it --- then we walk through the solution.
   \end{center}
 \end{frame}
-\note{After an edit: the four cells under "Matmul, distributed along columns
-too", in order: the round-trip (cell 26), the apply (28), the check (30) and
-the run (32). Not Ctrl+F8 on any of them: it re-runs the matvec cell (19),
-and a schedule widened for matmul distributes matvec's reduction there, so
-that cell stops on "tiling is not thread safe at axis \#1" and the race
-message.
-
-What the usual mistakes produce:
-block\_dims left at [32, 1, 1]: "the number of required parallel resources
-(blocks or threads) 1024 overflows the number of available resources 32".
-A second size with no second mapping entry: "scf.forall op requires a
-mapping attribute". x and y the wrong way round: the check stops with "x is
-not on the columns yet", though it would run and match numpy. A separate step for
-j, as in Part 1: "scf.forall op requires a mapping attribute of kind
-'thread' or 'warp'". [32, 32, 32]: "tiling is not thread safe at axis \#2".
-
-Until the exercise is done, the check stops with "matmul is not distributed
-along columns yet -- each thread still computes a 1x256 slice of c".}
 
 % =======================================================================
 \begin{frame}[fragile]{Solution --- \cd{distribute\_linalg.mlir}, and What Changed}
@@ -544,11 +438,6 @@ module attributes {transform.with_named_sequence} {
     \item<4-> Each block is 32 $\times$ 32 threads.
   \end{itemize}
 \end{frame}
-\note{The handles do not change: tile\_using\_forall makes one scf.forall
-however many loops it tiles.
-
-This schedule is for matmul only. On matvec its second size lands on the
-reduction, and the matvec cell stops on the race check.}
 
 % =======================================================================
 \begin{frame}[fragile]{Solution --- \cd{gpu.launch}}
@@ -585,13 +474,6 @@ reduction, and the matvec cell stops on the race check.}
       against numpy: \visible<5->{{\color{scgreen}\ttfamily OK}}
   \end{itemize}
 \end{frame}
-\note{The real output of the apply cell (28) with the solved schedule, with
-the affine maps written out in place (-{}-mlir-print-local-scope) and
-compressed as for matvec. Grid (8, 4, 1): x counts the 8 blocks of columns,
-y the 4 blocks of rows. by cuts the 32-row strips of a and c, bx the
-32-column strips of b and c; the thread ids then take one row of a's strip
-and one column of b's. Cell 30 checks it and cell 32 runs it. Run cells 26
-to 32 in the walkthrough notebook as you go.}
 
 % =======================================================================
 \begin{frame}{Which Thread Computes Which Element}
@@ -634,8 +516,6 @@ to 32 in the walkthrough notebook as you go.}
       \cd{ty}: here, 32 elements along a row of \cd{c}.
   \end{itemize}
 \end{frame}
-\note{The same picture as Session 1 Part 2's "Thread to Element Mapping",
-block by block: that kernel also put x on the columns.}
 
 % =======================================================================
 \begin{frame}{Why x on the Columns: Coalescing}
@@ -673,18 +553,6 @@ block by block: that kernel also put x on the columns.}
       warp writes 32 adjacent floats of \cd{c}, and reads 32 of \cd{b}.
   \end{itemize}
 \end{frame}
-\note{No timing, deliberately: Colab GPU timings are noise, and a number that
-moves for the wrong reason teaches worse than no number.
-
-The same goes for a: with x on j every lane of a warp reads the same
-a[i, k]; with x on i the lanes read a[i, k] 2 KB apart, and every lane reads
-the same b[k, j].
-
-Swapping y and x in both mappings is the right-hand picture: each lane is a
-row of c apart, one transaction per lane. It runs and matches numpy; the
-notebook's check is what rejects it. That is why the exercise put x on the
-columns, as Session 1 Part 2's kernel did; in the schedule it is one
-attribute per loop.}
 
 % =======================================================================
 \begin{frame}{Recap}
@@ -716,6 +584,5 @@ attribute per loop.}
       is accessed: x on the columns, and each warp touches adjacent floats.
   \end{itemize}
 \end{frame}
-\note{End here.}
 
 \end{document}

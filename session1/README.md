@@ -3,7 +3,7 @@
 Two notebooks, both self-contained (each downloads the prebuilt MLIR
 toolchain this tutorial uses — see the top-level README for why it's a
 custom build rather than the official LLVM release or a pip package). They
-are two independent parts, run start-to-finish in order — not two halves you
+are two independent parts, run start-to-finish in order — not two halves to
 switch between: Part 1 needs a CPU runtime only, Part 2 needs a GPU runtime
 only, and a GPU runtime is Colab's scarcer free-tier resource, so there's no
 reason to hold one during Part 1's CPU-only steps. Part 2 redownloads the
@@ -53,8 +53,7 @@ need to open those.
 Colab's file browser is also not how the notebooks open files. Each edit
 point has a cell calling `google.colab.files.view()` on the file to change,
 which opens it in the editor pane; the reference is in the same file.
-Outside Colab those cells print the paths instead, for you to open in your
-own editor.
+Outside Colab those cells print the paths instead, to open in an editor.
 
 ### Where a half-finished notebook stops
 
@@ -133,7 +132,7 @@ below), so the op is already defined. Part 2's only exercise is then
 `MatMulToGPUPattern`.
 
 `main` keeps both TODOs, so Part 1's exercise is untouched. Running Part 2
-locally rather than on Colab means checking that branch out yourself: the
+locally rather than on Colab means checking that branch out by hand: the
 notebook only selects it when it clones, and `MLIR_TUTORIAL_REPO_DIR` skips
 the clone entirely.
 
@@ -176,8 +175,8 @@ that exists to catch it.
 ## Running locally in VS Code
 
 See [`RUNNING_LOCALLY.md`](../RUNNING_LOCALLY.md). For Part 2, check out
-`session1-part1-solution` in your clone: on Colab the notebook clones that
-branch itself, but locally it uses your clone as it is.
+`session1-part1-solution` in the clone: on Colab the notebook clones that
+branch itself, but locally it uses the clone as it is.
 
 ## `blas-dialect/`
 
@@ -221,7 +220,7 @@ it reads top to bottom. The rule worth knowing is that a loop with no
 `iter_args` does not — so reduction loops end with an explicit
 `scf::YieldOp::create`.
 
-To build it yourself against a local MLIR install:
+To build it by hand against a local MLIR install:
 
 ```
 cmake -S blas-dialect -B blas-dialect/build -G Ninja \

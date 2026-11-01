@@ -140,7 +140,7 @@ the schedule is applied to both files.
 The provided schedule is correct, just incomplete, so its gate is a check on
 the result rather than an error.
 
-## Things that will cost you an afternoon
+## Things that can cost an afternoon
 
 - **`expand-strided-metadata` is required** once tiling introduces
   `memref.subview`, which is why the notebook adds it (and `lower-affine`) to

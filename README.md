@@ -16,7 +16,7 @@ installed locally.
 For the two GPU parts, switch the runtime to a T4 GPU (Runtime → Change
 runtime type) before running any cell.
 
-To run them in VS Code on your own Linux machine instead, see
+To run them in VS Code on a Linux machine instead, see
 [`RUNNING_LOCALLY.md`](RUNNING_LOCALLY.md).
 
 ## Sessions
@@ -99,7 +99,7 @@ Upload the resulting tarball as a GitHub Release asset (`gh release upload
 
 See `session1/blas-dialect/` for the custom dialect + pass plugin used in
 session 1's later steps, and `session1/README.md` for how to build it
-yourself.
+by hand.
 
 ## License
 

@@ -2,10 +2,8 @@
 %
 % Build:  make            (the deck PDF)
 % See presentation/README.md.
-\providecommand{\notesmode}{0}
 \documentclass[aspectratio=169,10pt]{beamer}
 \usepackage{sc26}
-\ifnum\notesmode=1 \setbeameroption{show notes}\fi
 
 \title{Introduction to MLIR}
 \subtitle{Session 2, Part 1 --- Linalg and Tiling, CPU}
@@ -17,13 +15,6 @@
 \begin{frame}[plain]
   \titlepage
 \end{frame}
-\note{Pre-run setup cells 0--7 of the walkthrough notebook before the room
-fills: the toolchain download is the slowest thing in this part and teaches
-nothing. There is no plugin to build in this session.
-
-One exercise, extending the tiling schedule: about 10 minutes of keyboard
-time. Steps 1 and 3 are read and run together; nobody types anything in
-them.}
 
 % =======================================================================
 \begin{frame}{Setup}
@@ -31,17 +22,14 @@ them.}
     \item<1-> \textbf{It is a fresh runtime.} Nothing from Session 1 carries
       over, so the notebook downloads the same toolchain again. Any runtime
       will do: this part runs on the CPU.
-    \item<2-> \textbf{You edit one MLIR file, a schedule.} No C++ and no
+    \item<2-> \textbf{The exercise edits one MLIR file, a schedule.} No C++ and no
       rebuild in this session: edit, save, re-run the cell.
     \item<3-> \textbf{One exercise:} tile matmul's third loop. Steps 1 and 3
       we read and run together.
-    \item<4-> \textbf{Colab trick:} lost your place? \cd{Ctrl+F8} runs every
-      cell above the one you are on.
+    \item<4-> \textbf{Colab trick:} \cd{Ctrl+F8} runs every cell above the
+      current one, to catch up after losing track.
   \end{itemize}
 \end{frame}
-\note{Matvec rides along as the second example, as in Session 1. Here it is
-not an answer sheet: the schedule they extend already works on it, and the
-exercise is to tile matmul's third loop.}
 
 % =======================================================================
 \begin{frame}{One level higher: Linalg}
@@ -74,7 +62,7 @@ exercise is to tile matmul's third loop.}
   \end{center}
   \vspace{0.2em}
   \begin{itemize}
-    \item<1-> In Session 1 you defined \cd{blas.matmul} and wrote its
+    \item<1-> Session 1 defined \cd{blas.matmul} and wrote its
       lowering. \alert{Linalg} is a dialect that ships with MLIR: its ops
       already mean matmul and matvec, and their lowering is already written.
     \item<1-> Linalg is a more general representation of linear-algebra
@@ -86,10 +74,6 @@ exercise is to tile matmul's third loop.}
       faster?}
   \end{itemize}
 \end{frame}
-\note{Step 1 is the top row: the Linalg op, lowered to loops and run, as in
-Session 1. Step 2 adds the tiling. Step 3 times both and asks why.
-
-Matmul is the theme throughout; matvec rides along as the smaller example.}
 
 % =======================================================================
 \section{Step 1 --- Linalg Ops}
@@ -155,13 +139,6 @@ Matmul is the theme throughout; matvec rides along as the smaller example.}
     \item<3-> Each point runs the \alert{loop body} once.
   \end{itemize}
 \end{frame}
-\note{No Linalg on this slide yet, just the model: the iteration space is a
-box of integer points, each access is an affine map from it to an operand's
-data, and the body is what one point computes. The next slide is the op that
-stores exactly these three things.
-
-The b map, (i, j) -> (j), is the broadcast: every row of the iteration space
-reads the same b[j].}
 
 % =======================================================================
 \begin{frame}[fragile]{Linalg Primer: From Loops to \cd{linalg.generic}}
@@ -209,16 +186,6 @@ linalg.generic {
       accumulate into it.
   \end{itemize}
 \end{frame}
-\note{Both sides are valid MLIR, and convert-linalg-to-loops turns the right
-one into the left one (with generated names). affine\_map dimensions can be
-named anything; mlir-opt prints them back as d0, d1.
-
-The generic op says nothing about loop order or how the loops are run; it
-only says what each point of the iteration space computes. That is what
-leaves the compiler free to tile it.
-
-The bias add ignores \%out, which is why its loop nest never loads c. Matmul
-and matvec use it: that is their +=.}
 
 % =======================================================================
 \begin{frame}[fragile]{Named Linalg Ops}
@@ -260,24 +227,6 @@ linalg.matvec ins(%mat, %vec : ...) outs(%out : ...)
       against that interface, so any transformation applies to all of them.
   \end{itemize}
 \end{frame}
-\note{Both files are complete; there is nothing to write in step 1. Round-trip
-both in the notebook (cell 11) as you show them. The listing leaves out the
-operand types: they are the 128x512, 512x256 and 128x256 memrefs (512 and 128
-for matvec's vector and output).
-
-Run cell 13 on the third step: it is linalg-generalize-named-ops on both
-files. mlir-opt names the dimensions d0, d1, d2 rather than i, j, k.
-
-The LinalgOp interface is what step 2's schedule matches on
-(structured.match interface\{LinalgOp\}), which is why it never has to name
-an op.
-
-reduction: points along k (along j for matvec) add into the same output
-element. The next slide shows what that does to the loops. Do not explain it
-as the output's map dropping k.
-
-Every Linalg named op on memrefs accumulates into its outs operand. That is
-why run\_and\_check zeroes the output buffer before each call.}
 
 % =======================================================================
 \begin{frame}[fragile]{Lowered to Loops}
@@ -310,16 +259,6 @@ why run\_and\_check zeroes the output buffer before each call.}
       \cd{matvec\_scf.mlir}, generated.
   \end{itemize}
 \end{frame}
-\note{The // i, j comments are the only additions to the real output.
-
-The bias add from the primer, both loops parallel, lowers with no load of c
-at all. Strictly, the load is there because the body uses the output's
-current value, which a reduction needs. Do not explain it as out's map
-dropping j.
-
-One difference from Session 1's matvec\_scf.mlir, if someone spots it: that
-file loads out[i] once and carries the sum in iter\_args; this nest loads and
-stores out[i] on every j iteration. Same answer; LLVM cleans it up.}
 
 % =======================================================================
 \begin{frame}[fragile]{Lowering and Execution}
@@ -329,22 +268,13 @@ stores out[i] on every j iteration. Same answer; LLVM cleans it up.}
 \end{lstlisting}
   \vspace{0.3em}
   \begin{itemize}
-    \item<2-> \cd{convert-linalg-to-loops} does the job your
+    \item<2-> \cd{convert-linalg-to-loops} does the job
       \cd{convert-blas-to-scf} did in Session 1.
     \item<3-> JIT-compiled, and checked against numpy's \cd{a @ b}.
   \end{itemize}
   \vspace{0.2em}
   \visible<3->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
 \end{frame}
-\note{Cell 17. Its CPU\_LOWERING\_PIPELINE is llvm-request-c-wrappers,
-convert-linalg-to-loops, then the rest of Session 1's passes:
-convert-scf-to-cf, convert-cf-to-llvm, convert-arith-to-llvm,
-finalize-memref-to-llvm, convert-func-to-llvm, reconcile-unrealized-casts.
-In Session 1 convert-blas-to-scf ran as its own step before the pipeline;
-here the Linalg lowering is simply part of it.
-
-The run is @matmul, as in the notebook. Step 2 adds two passes to this
-pipeline for the tiled matmul.}
 
 % =======================================================================
 \section{Step 2 --- Tiling, with a Transform Schedule}
@@ -401,14 +331,6 @@ pipeline for the tiled matmul.}
       \cd{c}.
   \end{itemize}
 \end{frame}
-\note{Exactly the same, to the last bit: tiling i and j does not reorder any
-sum, and tiling k keeps the additions for each element in k order. That is
-why the notebook checks the tiled result against numpy with the same
-tolerance as the untiled one.
-
-The order here, i and j first and then k inside the strips, is the order the
-exercise's schedule tiles in. The solution's subview of a subview is this
-picture in IR.}
 
 % =======================================================================
 \begin{frame}[fragile]{The Tile Is Still a \cd{linalg.matmul}}
@@ -448,15 +370,6 @@ linalg.matmul
       started with, on 32 $\times$ 32 tiles.
   \end{itemize}
 \end{frame}
-\note{The shape, not real output: the names are made up, and constants and
-types are left out. The real IR is nested differently: the exercise's
-schedule tiles i and j first and k second, so its k loop slices the strips
-the first step made rather than a, b and c directly. The solution, a few
-slides on, shows it.
-
-The point to land: tiling does not lower anything. What sits inside the
-tile loops is the same Linalg op, so it can be tiled again or lowered the
-usual way.}
 
 % =======================================================================
 \begin{frame}[fragile]{A Schedule: MLIR That Transforms MLIR}
@@ -483,23 +396,14 @@ usual way.}
   \begin{itemize}
     \item<1-> In Session 1 a rewrite meant C++: a pattern, a plugin build,
       and reloading \cd{mlir-opt}.
-    \item<2-> The \alert{transform dialect} lets you specify transformations
-      on operations, and apply them.
+    \item<2-> The \alert{transform dialect} specifies transformations on
+      operations, and applies them.
     \item<3-> Its operations are transformations to apply. Its values are
       \alert{handles} to operations, and an operation's results are handles
       to the operations it creates.
     \item<4-> No C++, no rebuild: edit the schedule, re-run the cell.
   \end{itemize}
 \end{frame}
-\note{The notebook runs it as
-mlir-opt linalg\_matmul.mlir
--{}-transform-preload-library=transform-library-paths=tile\_linalg.mlir
--{}-transform-interpreter. The preload flag loads the schedule; the
-interpreter finds @\_\_transform\_main in it and applies it to the payload.
-
-Keep the schedule in its own file. A payload module that carries the
-transform attribute trips the transform verifier as soon as a later pass
-outlines a function into it.}
 
 % =======================================================================
 \begin{frame}[fragile]{Reference: \cd{tile\_linalg.mlir}, Step 1 of 3 --- Schedule}
@@ -523,18 +427,13 @@ module attributes {transform.with_named_sequence} {
       payload's top-level op as \cd{\%root}.
     \item<3-> \cd{match} finds ops in the payload --- by \alert{interface},
       not by name, so any Linalg op. \cd{\%ops} is a \alert{handle}: a
-      reference to payload ops, not a value in your program.
+      reference to payload ops, not a value in the payload program.
     \item<4-> \cd{tile\_using\_for} takes one tile size per loop, in
       \cd{iterator\_types} order. \cd{[32, 32]} tiles the first two.
     \item<5-> It returns the tiled op, then one handle per loop it created:
       \cd{\%loops:2}.
   \end{itemize}
 \end{frame}
-\note{session2/tile\_linalg.mlir, as in the repo without its comments. It is a
-working schedule; they read it before changing anything.
-
-tile\_using\_for is itself written against the LinalgOp interface, which is
-why one schedule tiles matvec and matmul alike.}
 
 % =======================================================================
 \begin{frame}[fragile]{Reference: \cd{tile\_linalg.mlir}, Step 2 of 3 --- Applied to Matvec}
@@ -563,10 +462,6 @@ why one schedule tiles matvec and matmul alike.}
       restructures the loops, it lowers nothing.
   \end{itemize}
 \end{frame}
-\note{The real output of the notebook's cell 23, compressed: the constants
-are left out, and each "..." is a type the slide has no room for. The slice
-types carry a layout, strided<[512, 1], offset: ?>: a slice keeps its
-parent's row stride.}
 
 % =======================================================================
 \begin{frame}[fragile]{Reference: \cd{tile\_linalg.mlir}, Step 3 of 3 --- Applied to Matmul}
@@ -589,9 +484,6 @@ scf.for %arg3 = %c0 to %c128 step %c32 {                                 // i, b
       \alert{512} $\times$ 32: the 512 is \cd{k}, still untiled.
   \end{itemize}
 \end{frame}
-\note{The real output of cell 25, compressed the same way. These are the
-strips from the tiling slide: a 32-row strip of a, a 32-column strip of b, a
-32 by 32 tile of c.}
 
 % =======================================================================
 \begin{frame}[fragile]{Exercise 5 --- Tile Matmul's \cd{k} Loop}
@@ -603,19 +495,19 @@ strips from the tiling slide: a 32-row strip of a, a 32-column strip of b, a
   \textbf{What is different from matvec:}
   \begin{itemize}
     \item Matmul has three loops; matvec has two.
-    \item Two things you may need: \cd{transform.structured.match
+    \item Two things that may help: \cd{transform.structured.match
       ops\{["linalg.matmul"]\}} matches by op name, and a tile size of
       \cd{0} leaves that loop untiled.
   \end{itemize}
   \vspace{0.4em}
-  \textbf{Check as you go --- round-trip it} after every save:
+  \textbf{Check after every save --- round-trip it}:
 \begin{lstlisting}[style=plain,basicstyle=\ttfamily\small]
 !mlir-opt tile_linalg.mlir
 \end{lstlisting}
   \vspace{0.1em}
   \begin{itemize}
-    \item That checks the schedule is well-formed, not that it does what you
-      meant. For that, re-run the matmul cell to apply it, then the check
+    \item That checks the schedule is well-formed, not that it does what was
+      intended. For that, re-run the matmul cell to apply it, then the check
       after it: matmul's innermost op must work on 32 $\times$ 32 slices.
   \end{itemize}
   \vspace{0.4em}
@@ -623,19 +515,6 @@ strips from the tiling slide: a 32-row strip of a, a 32-column strip of b, a
     10 minutes to write it --- then we walk through the solution.
   \end{center}
 \end{frame}
-\note{Changing the shared step to [32, 32, 32] needs \%loops:3 as well. With
-\%loops:2 left as it was, the round-trip rejects it: "expected number of
-loops to tile (3) to match number of `loops` results (2)". With \%loops:3 it
-round-trips and tiles matmul, but the notebook's matvec cell (23), which runs
-after the exercise, fails on it: "too many tiles provided, expected at most 2
-found 3".
-
-After an edit, send them back to the matmul cell (25) and then the check
-(27). Not Ctrl+F8 on the check: that re-runs everything above it, the matvec
-cell included.
-
-Until the exercise is done, the notebook stops at the k-loop check (cell 27):
-"@matmul is not tiled in all three loops yet".}
 
 % =======================================================================
 \begin{frame}[fragile]{Solution --- \cd{tile\_linalg.mlir}, and What Changed}
@@ -660,16 +539,9 @@ module attributes {transform.with_named_sequence} {
 \end{lstlisting}
   \vspace{0.2em}
   \begin{itemize}
-    \item<2-> You could also try \cd{[32, 32, 32]} in the first step.
+    \item<2-> Another option: \cd{[32, 32, 32]} in the first step.
   \end{itemize}
 \end{frame}
-\note{The second match runs after the first tiling, so it finds the new
-linalg.matmul inside the i and j tile loops, and tiles that.
-
-If someone does try [32, 32, 32] in the first step: it tiles matmul, but
-the notebook also applies the schedule to matvec, which stops with "too many
-tiles provided, expected at most 2 found 3". The exercise slide's note has
-both errors.}
 
 % =======================================================================
 \begin{frame}[fragile]{Solution --- Tiled Matmul}
@@ -700,13 +572,6 @@ scf.for %arg3 = %c0 to %c128 step %c32 {                                  // i, 
       32 $\times$ 32.
   \end{itemize}
 \end{frame}
-\note{The real output with the solved schedule, compressed: the "..." after
-subview\_3 is three constants, the others are types. Run cells 25 to 29 in
-the walkthrough notebook as you go.
-
-Only the innermost op tells you all three loops are tiled. The 32 by 512
-subviews from the first step are still in the IR when the exercise is done,
-which is why the check looks at the linalg.matmul line and nothing else.}
 
 % =======================================================================
 \begin{frame}[fragile]{Lowering the Tiled Matmul}
@@ -726,14 +591,6 @@ convert-linalg-to-loops
   \vspace{0.2em}
   \visible<4->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
 \end{frame}
-\note{Cell 29 redefines CPU\_LOWERING\_PIPELINE with the two passes, then runs
-the tiled matmul. The later cells that compile a file use it too, which does
-nothing to the untiled one.
-
-Leave expand-strided-metadata out and the JIT stops on a bare "LLVM
-Translation failed for operation: builtin.unrealized\_conversion\_cast".
-Leave lower-affine out after it and the ExecutionEngine fails to build with
-no further detail.}
 
 % =======================================================================
 \section{Step 3 --- Did Matmul Get Faster?}
@@ -744,7 +601,7 @@ no further detail.}
     \item<1-> Same computation, same numbers, same single thread: untiled
       against tiled.
     \item<2-> \cd{benchmark} keeps the \alert{fastest} of five runs. Colab is
-      a shared machine, so a slow run mostly measures your neighbours.
+      a shared machine, so a slow run mostly measures other users.
   \end{itemize}
   \vspace{1em}
   \visible<3->{
@@ -757,13 +614,9 @@ no further detail.}
     \end{tabular}
   \end{center}
   \begin{center}\scriptsize\color{scgrey}
-    one run on a desktop CPU --- yours will differ
+    one run on a desktop CPU --- Colab's will differ
   \end{center}}
 \end{frame}
-\note{Run cell 31 live and read out the room's numbers rather than these.
-These are from the presenter's machine (a Threadripper 7960X); the shapes
-changed to 128, 256, 512 after the last Colab measurement, so Colab's figure
-for them is not known yet.}
 
 % =======================================================================
 \begin{frame}{Why So Much Faster? Read the Machine Code}
@@ -789,17 +642,6 @@ for them is not known yet.}
       floats at once, depending on the CPU.
   \end{itemize}
 \end{frame}
-\note{Cell 33 installs objdump if it is missing; cell 34 is the count. On the
-presenter's machine (AVX-512) the tiled matmul reported 16 floats at once;
-the Colab CPUs report 8 or 16.
-
-Why packed, if someone asks: in a tile, k runs a constant 32 times and LLVM
-unrolls it completely. The j loop is then innermost, its iterations are
-independent, and LLVM vectorizes it. Untiled, the innermost loop is the k
-reduction, a running float sum; vectorizing it would reorder the additions,
-so LLVM does not. Both are cost-model decisions: tiles of 16 and 32 get
-through on every CPU Colab hands out, 24 and 64 stay scalar
-(session2/README.md has the table).}
 
 % =======================================================================
 \begin{frame}{Recap}
@@ -826,6 +668,5 @@ through on every CPU Colab hands out, 24 and 64 stay scalar
       No C++, no rebuild.
   \end{itemize}
 \end{frame}
-\note{End here.}
 
 \end{document}

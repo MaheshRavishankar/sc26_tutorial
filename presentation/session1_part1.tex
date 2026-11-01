@@ -2,10 +2,8 @@
 %
 % Build:  make            (the deck PDF)
 % See presentation/README.md.
-\providecommand{\notesmode}{0}
 \documentclass[aspectratio=169,10pt]{beamer}
 \usepackage{sc26}
-\ifnum\notesmode=1 \setbeameroption{show notes}\fi
 
 \title{Introduction to MLIR}
 \subtitle{Session 1, Part 1 --- CPU}
@@ -17,15 +15,6 @@
 \begin{frame}[plain]
   \titlepage
 \end{frame}
-\note{Before the room fills, pre-run the walkthrough notebook's setup (cells
-2--8) and its first plugin build (cells 20 and 21): the toolchain download
-and the first build are the two slowest things in the day and neither
-teaches anything.
-
-Plan for the 90 minutes: 10 setup, 30 step 1, 28 defining the op,
-17 writing the lowering, 5 wrap. Exercise 1 is 12 minutes of keyboard time,
-exercise 2 (both parts) another 12, exercise 3 ten. If you are behind at
-exercise 3, type it yourself and narrate.}
 
 % =======================================================================
 \begin{frame}{One Computation, Two Paths}
@@ -42,7 +31,7 @@ exercise 3, type it yourself and narrate.}
       lbl/.style={font=\scriptsize\itshape,color=scgrey},
       arr/.style={-{Stealth[length=2mm]},draw=scgrey,thick}]
 
-    \node[box] (scf) {scf.for nest\\\normalfont\itshape you write it};
+    \node[box] (scf) {scf.for nest\\\normalfont\itshape written by hand};
     \node[box,right=1.6cm of scf] (llvm) {llvm dialect};
     \node[box,right=1.9cm of llvm] (run) {JIT + run};
 
@@ -51,11 +40,11 @@ exercise 3, type it yourself and narrate.}
 
     \visible<2->{
       \node[box,below=1.5cm of scf,draw=scaccent] (op)
-        {blas.matmul\\\normalfont\itshape custom op you define};
+        {blas.matmul\\\normalfont\itshape a custom op};
     }
     \visible<3->{
       \draw[arr,draw=scaccent] (op) -- node[lbl,right,align=left]
-        {your pass lowers it\\to the loop form} (scf);
+        {a pass lowers it\\to the loop form} (scf);
       \node[lbl,below=0.35cm of run,align=center,text width=3.2cm]
         {same pipeline,\\same answer};
     }
@@ -64,39 +53,26 @@ exercise 3, type it yourself and narrate.}
 
   \vspace{0.2em}
   \begin{itemize}
-    \item<1-> First you write the matmul \alert{loop nest} by hand.
-    \item<2-> Then you \alert{define an operation} that represents the matmul
+    \item<1-> First, write the matmul \alert{loop nest} by hand.
+    \item<2-> Then, \alert{define an operation} that represents the matmul
       computation as a whole.
-    \item<3-> Then you \alert{lower} from that operation to the loop form.
+    \item<3-> Then, \alert{lower} from that operation to the loop form.
   \end{itemize}
 \end{frame}
-\note{Say: the running example today is matmul. First you write the loop nest
-yourself in the scf dialect, lower it to LLVM, JIT it. Then you define an
-operation that stands for the whole computation, and write the pass that
-lowers it to the loop nest you just wrote.
-
-This diagram comes back near the end, once the pass is written.}
 
 % =======================================================================
 \begin{frame}{Hands-On Exercises}
   \begin{itemize}
-    \item<1-> \textbf{You edit MLIR and C++ files in Colab when prompted.}
+    \item<1-> \textbf{The exercises are edits to MLIR and C++ files, in Colab.}
       Edit the file, save, and re-run the cells that build and run it.
     \item<2-> \textbf{We walk through each notebook cell together}, as a
       class.
     \item<3-> \textbf{For each exercise there is a solved
-      matrix-\emph{vector} example} that you can use as a reference.
-    \item<4-> \textbf{Colab trick:} lost your place? \cd{Ctrl+F8} runs every
-      cell above the one you are on.
+      matrix-\emph{vector} example} to use as a reference.
+    \item<4-> \textbf{Colab trick:} \cd{Ctrl+F8} runs every cell above the
+      current one, to catch up after losing track.
   \end{itemize}
 \end{frame}
-\note{Three exercises, the second in two parts. The matvec reference is the
-answer sheet for the shape, not for the content -- say that explicitly or they
-will expect to copy it.
-Each reference is introduced on its own exercise slide.
-
-Ctrl+F8 is "Run before". There is no menu entry for it in the current Colab
-UI, so the shortcut is the only way to say it.}
 
 % =======================================================================
 \section{Step 1 --- Mat-Mult with Explicit Loops}
@@ -118,17 +94,13 @@ func.func @matmul(%a: memref<4x3xf32>, %b: memref<3x5xf32>,
 
   \vspace{0.3em}
   \begin{itemize}
-    \item<2-> Use \alert{\cd{matvec\_scf.mlir}} as your reference --- same
+    \item<2-> Use \alert{\cd{matvec\_scf.mlir}} as the reference --- same
       directory, same computation one dimension smaller, complete.
     \item<3-> The goal: \alert{execute} \cd{@matmul} and get the expected
       answer.
   \end{itemize}
 
 \end{frame}
-\note{Switch to the ATTENDEE notebook and run its JIT check (cell 17) to show
-the all-zero gate, then come back. It is worth 30 seconds: the empty function
-parses and runs, so a green parse is not a passing test, and saying so stops
-the first hand going up.}
 
 % =======================================================================
 \begin{frame}[fragile]{Reference: \cd{matvec\_scf.mlir}, Step 1 of 3 --- Bounds and Row Loop}
@@ -214,14 +186,6 @@ func.func @matvec(%mat: memref<4x3xf32>, %vec: memref<3xf32>,
       \cd{out[i]}.
   \end{itemize}
 \end{frame}
-\note{Walk the file in these three steps before they start. It is 20 lines
-and it contains every construct they need. The slides show the file as it is
-in the repo; the // comments marking the two loops are the only additions.
-
-Three things to land: memref.dim retrieves a dimension's size; iter\_args is
-how SSA writes a reduction -- the loop carries a value, the body yields the
-next one, the loop's RESULT is the final one, there is no mutable accumulator;
-and the store writes that result back.}
 
 % =======================================================================
 \begin{frame}[fragile]{Exercise 1 --- Write the Loop Nest}
@@ -239,7 +203,7 @@ and the store writes that result back.}
       \cd{b[k, j]}.
   \end{itemize}
   \vspace{0.5em}
-  \textbf{Check as you go} --- after every save, re-run the round-trip cell:
+  \textbf{Check after every save} --- re-run the round-trip cell:
 \begin{lstlisting}[style=plain,basicstyle=\ttfamily\small]
 !mlir-opt matmul_scf.mlir
 \end{lstlisting}
@@ -254,14 +218,6 @@ and the store writes that result back.}
     12 minutes to write it --- then we walk through the solution.
   \end{center}
 \end{frame}
-\note{Walk around while they type -- the two mistakes you will see most are
-starting the reduction from a zero constant, and indexing b as [j, k]. Neither
-produces an error, which is why the round-trip is only the immediate check.
-
-Worth saying about the round-trip: it is the most useful habit in MLIR work.
-Before you debug a pipeline, round-trip the input. The printed form may differ
-from what they typed -- generated SSA names, normalised whitespace. That is
-the printer, not a transformation.}
 
 % =======================================================================
 \begin{frame}[fragile]{Solution --- \cd{matmul\_scf.mlir}}
@@ -291,14 +247,6 @@ func.func @matmul(%a: memref<4x3xf32>, %b: memref<3x5xf32>,
 }
 \end{lstlisting}
 \end{frame}
-\note{This is where they verify their own answer. Run the pipeline and the JIT
-check in the walkthrough notebook as you go.
-
-Three things to say that are not on the slide. At the loads: it is
-\%b[\%k, \%j], the reduction index first -- swap them and nothing complains,
-you just get the wrong answer. At the dims: \%M and \%N are the two parallel
-dimensions and \%K is the reduction one; that distinction is the whole of
-Session 2. And at the end: remember this shape, they build it again in C++.}
 
 % =======================================================================
 \begin{frame}[fragile]{The Lowering Pipeline}
@@ -314,8 +262,8 @@ reconcile-unrealized-casts           (@\only<8>{\color{scaccent}$\leftarrow$ cle
   \vspace{0.25em}
   \begin{itemize}
     \item<1-> Seven passes, each lowering \alert{one} dialect.
-    \item<9-> After every one of them you have a valid MLIR module you can
-      print and read.
+    \item<9-> After every one of them the IR is a valid MLIR module, which
+      can be printed and read.
   \end{itemize}
   \visible<9->{\cmdbox{mlir-opt ... -{}-mlir-print-ir-after-all -{}-mlir-disable-threading}}
   \begin{itemize}
@@ -323,22 +271,6 @@ reconcile-unrealized-casts           (@\only<8>{\color{scaccent}$\leftarrow$ cle
       Translation to real LLVM IR happens inside the execution engine.
   \end{itemize}
 \end{frame}
-\note{This is the conceptual centre of Part 1. Do not rush it.
-
-If someone asks why it is this many passes: because each one is independently
-testable and reusable, and the GPU path in Part 2 reuses most of them.
-
-Scroll the real lowered output in the notebook: point at one llvm.cond\_br
-(the loops became a CFG) and one getelementptr chain (the loads became
-explicit address arithmetic), then move on.
-
-The two flags are mlir-opt flags. The notebook cell runs this pipeline
-through Python's PassManager, so to show them, run mlir-opt on the file with
-the same pipeline string:
-  mlir-opt matmul\_scf.mlir -{}-pass-pipeline="builtin.module(...)"
-      -{}-mlir-print-ir-after-all -{}-mlir-disable-threading
-Threading: with it on, function passes run on several functions at once and
-their dumps interleave.}
 
 % =======================================================================
 \begin{frame}[fragile]{Execution}
@@ -361,14 +293,12 @@ run_and_check(module, "matmul", [a, b, out], expected=a @ b)
   \vspace{0.4em}
   \visible<5->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
 \end{frame}
-\note{If someone's run gives all zeros while mlir-opt was happy, they saved
-the file but did not re-run from the round-trip cell.}
 
 % =======================================================================
 \begin{frame}{Step 1 Recap}
   \begin{center}
-    \large You wrote a matrix multiply at the loop level,\\
-    compiled it through seven passes, and ran it.
+    \large A matrix multiply written at the loop level,\\
+    compiled through seven passes, and run.
   \end{center}
   \vspace{1em}
   \begin{itemize}
@@ -378,7 +308,7 @@ the file but did not re-run from the round-trip cell.}
   \end{itemize}
   \vspace{1em}
   \visible<5->{\begin{center}\color{scaccent}\large
-    Short break. If anything is not working for you, raise your hand.
+    Short break. If anything is not working, raise a hand.
   \end{center}}
 \end{frame}
 
@@ -386,7 +316,7 @@ the file but did not re-run from the round-trip cell.}
 \section{Step 2 --- BLAS Dialect}
 \begin{frame}[plain]\sectionpage\end{frame}
 
-\begin{frame}[fragile]{Defining Your Own Level of Abstraction}
+\begin{frame}[fragile]{Defining a New Level of Abstraction}
   \begin{columns}[t]
     \begin{column}{0.47\textwidth}
       \begin{center}\small\textbf{the loop nest}\end{center}
@@ -421,8 +351,8 @@ blas.matmul %a, %b, %out
   \end{columns}
   \vspace{0.5em}
   \begin{itemize}
-    \item<3-> MLIR lets you create \alert{higher levels of abstraction} ---
-      your own DSL --- as operations of your own.
+    \item<3-> MLIR supports \alert{higher levels of abstraction} --- a
+      custom DSL --- as new operations.
     \item<4-> The compiler then reasons about \alert{a matmul operation}
       directly, instead of deriving that from a loop nest by pattern
       matching. Nothing has to be lifted back out of the loops.
@@ -430,18 +360,6 @@ blas.matmul %a, %b, %out
       \cd{gpu.launch} in Part 2.
   \end{itemize}
 \end{frame}
-\note{This is the argument for the whole session, so do not skip it. The op
-is not shorter -- it is more \emph{informative}. A tile, a distribute, a fuse
-becomes a rewrite on one op rather than a loop-dependence analysis, and
-everything Session 2 does with the transform dialect is only possible because
-the op says what it is.
-
-Notebook step 2 starts here. Have everyone run its first cells now: they
-build the plugin as shipped (1-2 minutes the first time) and round-trip
-matvec\_custom.mlir through it, so the build runs while you talk through this
-slide and the next. ninja is running mlir-tblgen over the dialect's .td files
-to generate the op classes, parsers and printers, then compiling them with
-the hand-written .cpp into one shared object.}
 
 % =======================================================================
 \begin{frame}{Anatomy of a Dialect}
@@ -481,17 +399,13 @@ the hand-written .cpp into one shared object.}
   \end{center}
   \vspace{0.5em}
   \begin{itemize}
-    \item<1-> First you \alert{define the op}. Its \alert{ODS} (Operation
+    \item<1-> First, \alert{define the op}. Its \alert{ODS} (Operation
       Definition Specification) is a declarative spec written in TableGen.
       \cd{mlir-tblgen} generates the op's C++ from it, and the verifier in
       \cd{BlasOps.cpp} adds what ODS cannot say.
-    \item<2-> Then you \alert{write the lowering} that turns it into loops.
+    \item<2-> Then, \alert{write the lowering} that turns it into loops.
   \end{itemize}
 \end{frame}
-\note{TableGen files are normally .td. Colab's editor will not open that
-extension, so the one file attendees edit is BlasOps.td.txt; mlir-tblgen does
-not care about the extension. The dialect's other .td files keep their real
-names, since nobody needs to open them.}
 
 % =======================================================================
 \begin{frame}[fragile]{Defining an Operation}
@@ -514,17 +428,11 @@ func.func @matmul(%a: memref<4x3xf32>, %b: memref<3x5xf32>,
   \visible<3->{\errbox{matmul\_custom.mlir:5:3: error: custom op 'blas.matmul' is unknown}}
   \vspace{0.3em}
   \begin{itemize}
-    \item<4-> Once you have defined the operation, the same round-trip
+    \item<4-> Once the operation is defined, the same round-trip
       \alert{succeeds}: \cd{mlir-opt} parses the file and prints it back
       in the same syntax.
   \end{itemize}
 \end{frame}
-\note{Parsing the file proves their assemblyFormat accepts the syntax;
-printing it back proves it produces the same syntax. One check,
-both directions -- which is what the assembly-format step is about.
-
-The real file has three comment lines above the function, which is why the
-error says line 5.}
 
 % =======================================================================
 \begin{frame}[fragile]{Reference: \cd{Blas\_MatVecOp}, Step 1 of 5 --- Operands}
@@ -549,7 +457,7 @@ def Blas_MatVecOp : Blas_Op<"matvec"> {
     \item<3-> \cd{arguments} lists the operands. Each one has a
       \alert{type constraint} and a \alert{name}.
     \item<4-> ODS generates the check for those types: a \cd{blas.matvec}
-      with a 1D \cd{mat} is rejected without you writing any C++.
+      with a 1D \cd{mat} is rejected with no hand-written C++.
   \end{itemize}
 \end{frame}
 
@@ -603,12 +511,10 @@ let assemblyFormat =
     \item<6-> From it, TableGen generates both the \alert{parser} (text to op)
       and the \alert{printer} (op to text), so the two always agree.
     \item<7-> \cd{attr-dict} before the colon is \alert{not optional
-      boilerplate}. Leave it out and your op cannot carry attributes, which
+      boilerplate}. Leave it out and the op cannot carry attributes, which
       breaks things later in ways that look unrelated.
   \end{itemize}
 \end{frame}
-\note{Spend a moment on attr-dict. Every year someone leaves it out and the
-failure lands three steps away.}
 
 \begin{frame}[fragile]{Reference: \cd{Blas\_MatVecOp}, Step 3 of 5 --- What TableGen Generates}
   From the ODS, \cd{mlir-tblgen} writes \cd{build/include/Blas/BlasOps.h.inc}:
@@ -621,12 +527,12 @@ class MatVecOp : public ::mlir::Op<MatVecOp, ...> {
                     ::mlir::Value mat, ::mlir::Value vec, ::mlir::Value out);
                                (@\only<3>{\color{scaccent}$\leftarrow$ what a pattern calls to CREATE the op}@)
   ::llvm::LogicalResult verify();
-                               (@\only<4>{\color{scaccent}$\leftarrow$ declared here, defined by you (step 5)}@)
+                               (@\only<4>{\color{scaccent}$\leftarrow$ declared here, defined in step 5}@)
 };
 \end{lstlisting}
   \vspace{0.25em}
   \begin{itemize}
-    \item<2-> Every operand you name in \cd{arguments} gets a \cd{get*}
+    \item<2-> Every operand named in \cd{arguments} gets a \cd{get*}
       accessor: \cd{\$mat} becomes \cd{getMat()}, \cd{\$out} becomes
       \cd{getOut()}.
     \item<5-> ODS generates the boilerplate --- accessors, builders, parser,
@@ -636,12 +542,6 @@ class MatVecOp : public ::mlir::Op<MatVecOp, ...> {
       every build.
   \end{itemize}
 \end{frame}
-\note{The accessors are the point of this slide: the verifier in step 5 and
-the lowering pattern later both call getMat(), getVec() and getOut(), and
-this is where they come from. Their own op will get getA(), getB(), getOut().
-
-These are the real declarations, with the long trait list on the class
-elided. The notebook prints the same lines for MatMulOp after the build.}
 
 \begin{frame}{Reference: \cd{Blas\_MatVecOp}, Step 4 of 5 --- What ODS Cannot Say}
   \begin{itemize}
@@ -664,18 +564,12 @@ elided. The notebook prints the same lines for MatMulOp after the build.}
     \item<3-> \cd{let hasVerifier = 1;} in the ODS is what generates the
       \cd{verify()} \emph{declaration}. Leave out the C++ definition and
       \cd{mlir-opt} fails to load the plugin with an undefined-symbol error.
-    \item<4-> The ODS checks plus your \cd{verify()} are the op's
+    \item<4-> The ODS checks plus the hand-written \cd{verify()} are the op's
       \alert{verifier}. MLIR runs it when IR is \alert{parsed} and
       \alert{after every pass}, so the op's guarantees hold on the input and
       across every transformation.
   \end{itemize}
 \end{frame}
-\note{If someone forgets the definition for their own op, the plugin still
-builds -- we link with -Wl,-z,undefs because MLIR's own symbols are resolved
-by mlir-opt at dlopen time. The failure comes when mlir-opt loads it:
-  symbol lookup error: libBlasPlugin.so: undefined symbol:
-  \_ZN4blas8MatMulOp6verifyEv
-which demangles (c++filt) to blas::MatMulOp::verify().}
 
 \begin{frame}[fragile]{Reference: \cd{Blas\_MatVecOp}, Step 5 of 5 --- \cd{MatVecOp::verify()}}
   \cd{blas-dialect/lib/BlasOps.cpp}:
@@ -701,7 +595,7 @@ LogicalResult MatVecOp::verify() {
     \item<3-> One \cd{verifyDimsMatch} call per constraint. The helper lets a
       dynamic (\cd{?}) dimension through: its size is known only at run time,
       so the verifier cannot check it.
-    \item<5-> The string is \alert{your} error message --- what someone sees
+    \item<5-> The string is \alert{the op's own} error message --- what someone sees
       when they write a \cd{blas.matvec} whose shapes do not agree.
   \end{itemize}
 \end{frame}
@@ -789,13 +683,6 @@ LogicalResult (@\df{MatMulOp}@)::verify() {
   \end{tabular}
   \end{center}
 \end{frame}
-\note{Same shape as MatVecOp::verify() with the accessors renamed, plus one
-more constraint: the output has columns now, and they come from b.
-
-Optional demo, and it lands better than any explanation: after the
-round-trip check passes, edit matmul\_custom.mlir so b is memref<4x5xf32>,
-re-run, and show the room the error message THEY wrote coming out of the
-compiler. Undo it afterwards.}
 
 % =======================================================================
 \begin{frame}{What the Build Does}
@@ -808,11 +695,11 @@ compiler. Undo it afterwards.}
       lbl/.style={font=\scriptsize\itshape,color=scgrey}]
 
     \node[box] (td) at (0,1.1)
-      {BlasOps.td.txt\\[-0.1em]\normalfont\itshape\scriptsize you wrote this};
+      {BlasOps.td.txt\\[-0.1em]\normalfont\itshape\scriptsize Exercise 2a};
     \visible<3->{
       \node[box] (cpp) at (0,-1.1)
         {BlasOps.cpp, LowerBlasToSCF.cpp\\[-0.1em]%
-         \normalfont\itshape\scriptsize you wrote these};}
+         \normalfont\itshape\scriptsize Exercises 2b and 3};}
     \visible<2->{
       \node[gen] (inc) at (5.0,1.1) {BlasOps.h.inc\\[-0.1em]BlasOps.cpp.inc};
       \draw[arr] (td) -- node[lbl,above]{mlir-tblgen} (inc);}
@@ -834,14 +721,6 @@ compiler. Undo it afterwards.}
     \item<8-> When a change seems to have no effect, this is why. Every time.
   \end{itemize}
 \end{frame}
-\note{Say the last two bullets out loud: this is the single most common
-lost-ten-minutes in the session. The notebook built the plugin once before the
-exercise; after every edit to .td.txt or .cpp, the rebuild cell re-runs
-mlir-tblgen over their .td.txt to generate a class declaration, a parser, a
-printer and builders, then recompiles that with the hand-written .cpp.
-
-If the build fails: read the FIRST error, not the last. A TableGen syntax error
-cascades into dozens of C++ errors about a class that was never generated.}
 
 % =======================================================================
 \begin{frame}[fragile]{Check 2 --- Round-Trip through the Plugin}
@@ -917,18 +796,6 @@ cascades into dozens of C++ errors about a class that was never generated.}
       \cd{c0} and \cd{c1} say which dimension.
   \end{itemize}
 \end{frame}
-\note{\cd{blas-dialect/lib/LowerBlasToSCF.cpp}. This pattern is complete in
-the file and is what they copy from. The operands vec and out are read here
-too in the file; they are left off this slide and come into use in steps 3
-and 4.
-
-On the right-hand columns of these slides: the IR each C++ call builds, with
-the SSA names tidied and the types left off. It is the hand-written
-matvec\_scf.mlir from step 1, rebuilt in C++.
-
-If someone runs the pass and compares: the printed output shows
-arith.constant 4 and 3 where this slide shows memref.dim. The rewrite driver
-folds memref.dim of a static shape to a constant.}
 
 \begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 2 of 5 --- Row Loop}
   \begin{columns}[t]
@@ -965,11 +832,9 @@ folds memref.dim of a static shape to a constant.}
     \item<3-> Ops created after \cd{setInsertionPointToStart} land
       \alert{inside} that loop's body.
     \item<4-> \cd{InsertionGuard} restores the insertion point when the scope
-      ends. Leave it out and your ops land in the wrong block.
+      ends. Leave it out and later ops land in the wrong block.
   \end{itemize}
 \end{frame}
-\note{Walk the three lines that repeat for every loop: create the op, move the
-insertion point into its body, grab the induction variable.}
 
 \begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 3 of 5 --- Reduction Loop}
   \begin{columns}[t]
@@ -1023,16 +888,6 @@ insertion point into its body, grab the induction variable.}
     \end{column}
   \end{columns}
 \end{frame}
-\note{Six steps, one statement at a time:
-1. The load of out[i]: the running total starts from what is already there,
-   which is the +=.
-2. ValueRange\{init\} makes the loop carry a value, starting at \%init.
-3. Move into the body. j is \%j; acc is \%a, the carried value as seen from
-   inside the body.
-4. Read mat[i, j] and vec[j].
-5. Multiply, and add to the carried value.
-6. Yield the new value. The loop carries one, so the yield is explicit -- a
-   loop with no iter\_args gets its scf.yield created for it.}
 
 \begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 4 of 5 --- Store}
   \begin{columns}[t]
@@ -1082,9 +937,6 @@ scf.for %i = %c0 to %numRows step %c1 {
       \cd{getResult(0)}: the value of the reduction, \cd{\%acc}.
   \end{itemize}
 \end{frame}
-\note{It goes after the reduction loop and inside the row loop. Store the
-iter arg (getRegionIterArgs()[0]) instead and it builds, runs, and silently
-gives the previous value of out.}
 
 % =======================================================================
 \begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 5 of 5 --- Registration}
@@ -1111,8 +963,8 @@ struct LowerBlasToSCFPass
     \item<2-> The pass's name, \cd{convert-blas-to-scf}, is declared in
       \cd{Passes.td}, in TableGen like the op, which generates this base
       class; the plugin registers the pass with \cd{mlir-opt}.
-    \item<3-> \cd{patterns.add<...>} registers a pattern with the pass. Yours
-      goes on the same line.
+    \item<3-> \cd{patterns.add<...>} registers a pattern with the pass.
+      \cd{MatMulToSCFPattern} goes on the same line.
     \item<4-> \cd{applyPatternsGreedily} applies them to the IR the pass runs
       on --- next slide.
   \end{itemize}
@@ -1132,8 +984,6 @@ struct LowerBlasToSCFPass
       not match --- and on \cd{failure()} it must leave the IR untouched.
   \end{itemize}
 \end{frame}
-\note{The driver also folds ops as it goes, which is why the pass's printed
-output has constants where the pattern built memref.dim.}
 
 % =======================================================================
 \begin{frame}{Exercise 3 --- Write the Lowering}
@@ -1145,7 +995,7 @@ output has constants where the pattern built memref.dim.}
     \item<1-> One pass, \cd{convert-blas-to-scf}, one \alert{pattern per op}.
     \item<2-> The scaffolding is already there, commented out: operands,
       index constants, problem sizes, and the \cd{eraseOp} that retires the op.
-    \item<3-> You write \alert{the loop nest} --- the same one as step 1, now
+    \item<3-> Write \alert{the loop nest} --- the same one as step 1, now
       built programmatically --- and then \alert{register the pattern}.
     \item<4-> Reference: \cd{MatVecToSCFPattern}, same file, complete.
   \end{itemize}
@@ -1154,13 +1004,6 @@ output has constants where the pattern built memref.dim.}
     10 minutes to write it --- then we walk through the solution.
   \end{center}}
 \end{frame}
-\note{If you are behind schedule, this is the exercise to convert into a live
-walkthrough: you type it, narrating, and they watch. The payoff here is
-understanding the shape rather than producing it.
-
-Remind them of the two rules from the reference: loop bodies are built by
-moving the rewriter's insertion point into the loop's block, and an
-InsertionGuard puts it back when the scope ends.}
 
 % =======================================================================
 \begin{frame}[fragile]{Solution --- \cd{MatMulToSCFPattern}, and What Changed from Matvec}
@@ -1191,12 +1034,6 @@ auto rowLoop = scf::ForOp::create(rewriter, loc, c0, M, c1);
 }
 \end{lstlisting}
 \end{frame}
-\note{This goes where the scaffolding says "your loop nest here". Everything
-in black is the matvec pattern with the names changed (M, K, N for the sizes,
-k for the reduction index). The orange is what is new: the column loop
-wrapped around the reduction, and the second index on out and b.
-
-It generates exactly the loop nest they wrote by hand in step 1.}
 
 \begin{frame}[fragile]{Solution --- Register the Pattern}
 \begin{lstlisting}[language=C++,basicstyle=\ttfamily\scriptsize,morekeywords={void,override}]
@@ -1211,7 +1048,7 @@ void runOnOperation() override {
     \item<2-> A pattern that is never registered is never applied, and
       \cd{blas.matmul} survives the pass untouched.
     \item<3-> Which is the \alert{same symptom} as a pattern that returns
-      \cd{failure()}. The pass catches both for you:
+      \cd{failure()}. The pass catches both:
   \end{itemize}
   \vspace{0.3em}
   \visible<3->{\errbox{error: convert-blas-to-scf did not convert 'blas.matmul' -{}- is its pattern\\
@@ -1235,7 +1072,7 @@ void runOnOperation() override {
 
     \node[box,below=1.2cm of scf,draw=scaccent] (op) {blas.matmul};
     \draw[arr,draw=scaccent] (op) -- node[lbl,right,align=left]
-      {convert-blas-to-scf\\\emph{you wrote this}} (scf);
+      {convert-blas-to-scf\\\emph{Exercise 3}} (scf);
 
     \node[lbl,below=0.35cm of run,align=center,text width=3.4cm]
       {the same seven passes\\as step 1, same answer};
@@ -1244,12 +1081,12 @@ void runOnOperation() override {
   \vspace{0.2em}
   \begin{itemize}
     \item<2-> \cd{convert-blas-to-scf} turns \cd{blas.matmul} into the
-      \cd{scf.for} nest you wrote by hand in step 1.
+      \cd{scf.for} nest written by hand in step 1.
     \item<3-> An \alert{op} --- operands, types, assembly syntax --- from
       eight lines of ODS.
-    \item<4-> A \alert{verifier}, so bad IR is rejected with your own error
-      message.
-    \item<5-> A \alert{pass} that rewrites your op into standard dialects.
+    \item<4-> A \alert{verifier}, so bad IR is rejected with the op's own
+      error message.
+    \item<5-> A \alert{pass} that rewrites the op into standard dialects.
   \end{itemize}
   \vspace{0.3em}
   \visible<6->{\begin{center}\large
@@ -1259,11 +1096,5 @@ void runOnOperation() override {
     Everything upstream MLIR does --- \cd{linalg}, \cd{vector}, \cd{gpu} ---
     is this, at scale.\end{center}}
 \end{frame}
-\note{From convert-blas-to-scf onwards the rest of the compilation is what they
-did in step 1: the same seven passes, the same JIT, the same check against
-numpy. Their dialect only had to lower to something the rest of the stack
-already understands.
-
-End here. Part 2 has its own deck, notebook and runtime.}
 
 \end{document}

@@ -31,11 +31,10 @@ That is beamer, `listings`, TikZ and the fonts, about 400 MB.
 cd presentation
 make            # every deck's PDF, e.g. session1_part1.pdf -- the only PDFs committed
 make handout    # *_handout.pdf -- on demand, 1 page per slide
-make notes      # *_notes.pdf   -- on demand, slides + speaker notes
 make clean      # remove .aux/.log/.nav/...; keeps the PDFs
 ```
 
-The handout and notes PDFs are not committed (`.gitignore` keeps them out).
+The handout PDFs are not committed (`.gitignore` keeps them out).
 `make handout` is still the quickest way to review a change: one page per
 slide instead of one per overlay step.
 
@@ -55,8 +54,8 @@ slide instead of one per overlay step.
 - Any frame containing a listing needs `[fragile]`.
 - A verbatim environment **cannot** go inside `\visible<2->{...}`. Use the
   declaration form, `\onslide<2->`, or the `visibleenv` environment instead.
-- Speaker notes go in `\note{...}` after the frame. They are typeset text, so
-  escape underscores: `iter\_args`, not `iter_args`.
+- The decks have no presenter notes (deleted on 2026-11-01); what to do
+  while presenting is under "Driving a session" below.
 - Walk the **reference** in stages before an exercise, one frame per stage.
   The solution afterwards shows what differs from the reference, marked with
   `\df`, or walks the solution a few highlighted lines at a time with `\hl`.
@@ -83,13 +82,35 @@ needs this re-run. Never edit a `*_walkthrough.ipynb` by hand.
 
 Open the walkthrough notebook in Colab from your own account and keep the
 attendee notebook in a second tab, unsolved --- that is how you show what a
-cell does *before* the exercise is written (the all-zero gate in Step 1 is
-worth 30 seconds). Run the setup cells before the room fills: the toolchain
-download and the first cmake configure are the two slowest things in the day
-and neither teaches anything.
+cell does *before* the exercise is written. Before the room fills, run the
+walkthrough's setup cells (3--8; on a T4 runtime for the GPU parts): the
+toolchain download is the slowest thing in every part and teaches nothing.
+For Session 1, run the first plugin build too (Part 1: cells 20 and 21; Part
+2: cells 22 and 23).
 
-Timing that Session 1 Part 1 is built around, for a 90-minute slot: 10 minutes
-setup, 30 for Step 1 (12 of them exercise time), 28 for Step 2 round one (12
-exercise), 17 for round two (10 exercise), 5 to wrap up. If you are behind at
-the last exercise, type it yourself and narrate --- the payoff there is
-understanding the shape, not producing it.
+Cell numbers below are the attendee notebook's; the walkthrough's are one
+higher.
+
+- **Session 1 Part 1**, 90 minutes: 10 setup, 30 for step 1, 28 for defining
+  the op, 17 for the lowering, 5 to wrap up. Keyboard time is 12 minutes for
+  Exercise 1, 12 for Exercise 2 (both parts) and 10 for Exercise 3. Before
+  Exercise 1, run the attendee notebook's JIT check (cell 17) to show the
+  all-zero result: an empty function parses and runs, so a clean parse is
+  not a passing test. If you are behind at Exercise 3, type it yourself and
+  narrate.
+- **Session 1 Part 2**: one exercise, the GPU lowering, about 10 minutes.
+  After an edit, attendees re-run the rebuild cell, the pass and the run on
+  the GPU. If you are behind, type it yourself and narrate.
+- **Session 2 Part 1**: one exercise, about 10 minutes. After an edit,
+  attendees re-run the matmul cell (25) and then the check (27). Not
+  `Ctrl+F8` on the check: it re-runs the matvec cell (23), which stops on a
+  `[32, 32, 32]` schedule ("too many tiles provided, expected at most 2
+  found 3").
+- **Session 2 Part 2**: one exercise, about 10 minutes. After an edit,
+  attendees run, in order, the round-trip (26), the apply (28), the check
+  (30) and the run (32). Not `Ctrl+F8` on any of them: it re-runs the matvec
+  cell (19), which stops on a schedule widened for matmul ("tiling is not
+  thread safe at axis #1"). **Known problem:** the walkthrough clones
+  `session2-part2-solution`, whose schedule is for matmul only, so its
+  matvec cell stops the same way on the first pass.
+
