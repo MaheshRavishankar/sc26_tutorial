@@ -15,7 +15,11 @@ load it.
 
    For Session 1 Part 2, also run `git checkout session1-part1-solution` in
    the clone. On Colab that notebook clones the branch itself; locally it
-   uses your clone as it is.
+   uses your clone as it is. The same goes for the presenter's walkthrough
+   notebooks in `presentation/`: each needs its part's solution branch
+   (`session1_part1_walkthrough.ipynb` needs `session1-part1-solution`, and
+   so on). These notebooks stop with a message if your clone is on another
+   branch. Check out `main` again for the other attendee notebooks.
 
 2. **Download the toolchain**,
    [`mlir-tutorial-llvm.tar.gz`](https://github.com/MaheshRavishankar/sc26_tutorial/releases/download/session1-toolchain-v1/mlir-tutorial-llvm.tar.gz)
@@ -104,6 +108,9 @@ Colab, so nothing changes there.
   environment you installed into. `import sys; print(sys.executable)` shows
   which Python the kernel runs. If you have just installed the packages,
   restart the kernel.
+- **`This notebook needs the session1-part1-solution branch, but ... is on
+  main`**, from the clone cell: run the `git checkout` it names in your
+  clone, then run the notebook again from the top.
 - **The notebook downloads the toolchain or clones the repo anyway**: the
   kernel does not see `.env`. A kernel keeps the environment it started
   with, so restart it after you create or change `.env`, and check that the
