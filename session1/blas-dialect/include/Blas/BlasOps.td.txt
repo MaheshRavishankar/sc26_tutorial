@@ -34,28 +34,28 @@ def Blas_MatVecOp : Blas_Op<"matvec"> {
 }
 
 //===----------------------------------------------------------------------===//
-// blas.matmul -- YOUR TURN.
+// blas.matmul -- EXERCISE.
 //===----------------------------------------------------------------------===//
 //
 // TODO(exercise): define `Blas_MatMulOp` here, modelled on Blas_MatVecOp
 // above. It computes `out[i, j] += sum_k a[i, k] * b[k, j]`, so all three
 // operands are 2D f32 memrefs.
 //
-// Your definition is correct when `mlir-opt --load-dialect-plugin=...` can
-// parse and re-print session1/matmul_custom.mlir unchanged, i.e. it must
-// accept exactly this syntax:
+// The definition is correct when `mlir-opt --load-dialect-plugin=...` can
+// parse session1/matmul_custom.mlir and print blas.matmul back in the same
+// syntax, which is exactly this:
 //
 //   blas.matmul %a, %b, %out : memref<4x3xf32>, memref<3x5xf32>, memref<4x5xf32>
 //
 // Notes:
 //  - The C++ class name tablegen generates is the def name minus the
-//    `Blas_` prefix, so `def Blas_MatMulOp` gives you `blas::MatMulOp` --
+//    `Blas_` prefix, so `def Blas_MatMulOp` becomes `blas::MatMulOp` --
 //    that is the name the lowering passes expect.
 //  - Set `let hasVerifier = 1;` as matvec does, then write
 //    `LogicalResult MatMulOp::verify()` in lib/BlasOps.cpp -- there is a
 //    matvec one there to copy, and a verifyDimsMatch helper to call. The two
-//    go together, and the failure if you forget is an awkward one: the plugin
-//    still *builds*, then mlir-opt refuses to load it with
+//    go together, and the failure when verify() is missing is an awkward
+//    one: the plugin still *builds*, then mlir-opt refuses to load it with
 //      undefined symbol: _ZN4blas8MatMulOp6verifyEv
 //    which demangles to blas::MatMulOp::verify().
 

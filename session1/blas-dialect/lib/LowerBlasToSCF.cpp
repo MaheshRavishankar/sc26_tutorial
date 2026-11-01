@@ -41,10 +41,11 @@ namespace {
 // Loop bodies are built by setting the rewriter's insertion point into the
 // loop's block, not by passing a body-builder lambda. Two things to know:
 //
-//  - A loop with no iter_args gets its `scf.yield` terminator created for
-//    you; setInsertionPointToStart puts your ops before it.
-//  - A loop *with* iter_args does not, because only you know what it should
-//    yield -- so the reduction loop below ends with an explicit scf.yield.
+//  - A loop with no iter_args gets its `scf.yield` terminator created
+//    automatically; setInsertionPointToStart puts the new ops before it.
+//  - A loop *with* iter_args does not, because the builder cannot know what
+//    it should yield -- so the reduction loop below ends with an explicit
+//    scf.yield.
 struct MatVecToSCFPattern : public OpRewritePattern<MatVecOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -133,7 +134,7 @@ struct MatVecToSCFPattern : public OpRewritePattern<MatVecOp> {
 //     Value K = memref::DimOp::create(rewriter, loc, a, c1);
 //     Value N = memref::DimOp::create(rewriter, loc, b, c1);
 //
-//     ... your loop nest here ...
+//     ... write the loop nest here ...
 //
 //     rewriter.eraseOp(op);
 //     return success();
@@ -146,7 +147,7 @@ struct LowerBlasToSCFPass
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
     patterns.add<MatVecToSCFPattern>(&getContext());
-    // TODO(exercise): register your pattern too:
+    // TODO(exercise): register the matmul pattern too:
     //   patterns.add<MatMulToSCFPattern>(&getContext());
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {

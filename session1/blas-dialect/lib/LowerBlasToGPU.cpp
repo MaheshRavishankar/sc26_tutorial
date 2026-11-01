@@ -152,7 +152,7 @@ struct MatVecToGPUPattern : public OpRewritePattern<MatVecOp> {
 //     Value K = memref::DimOp::create(rewriter, loc, a, c1);
 //     Value N = memref::DimOp::create(rewriter, loc, b, c1);
 //
-//     ... your gpu.launch here ...
+//     ... build the gpu.launch here ...
 //
 //     rewriter.eraseOp(op);
 //     return success();
@@ -165,7 +165,7 @@ struct LowerBlasToGPUPass
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
     patterns.add<MatVecToGPUPattern>(&getContext());
-    // TODO(exercise): register your pattern too:
+    // TODO(exercise): register the matmul pattern too:
     //   patterns.add<MatMulToGPUPattern>(&getContext());
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {

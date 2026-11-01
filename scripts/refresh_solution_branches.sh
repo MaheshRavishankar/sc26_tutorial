@@ -16,7 +16,8 @@
 #   git push --force-with-lease origin session1-part1-solution ...
 #
 # A conflict means main changed a file a solution also changes: resolve it,
-# `git cherry-pick --continue`, then re-run this script.
+# `git cherry-pick --continue`, `git branch --force <branch> HEAD`, then
+# re-run this script (and `git switch main` at the end).
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"

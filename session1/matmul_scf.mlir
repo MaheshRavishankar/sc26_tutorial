@@ -13,7 +13,7 @@
 // like here.
 module {
   func.func @matmul(%a: memref<4x3xf32>, %b: memref<3x5xf32>, %out: memref<4x5xf32>) {
-    // TODO(exercise): your nested scf.for loops go here.
+    // TODO(exercise): write the nested scf.for loops here.
     return
   }
 }

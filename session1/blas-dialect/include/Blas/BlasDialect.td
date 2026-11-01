@@ -8,10 +8,10 @@ def Blas_Dialect : Dialect {
   let summary = "A tiny dense-linear-algebra dialect used in the SC26 "
                 "introduction-to-MLIR tutorial.";
   let description = [{
-    Holds one worked-through op (`blas.matvec`) and one you write yourself
-    (`blas.matmul`). Both name a whole dense-linear-algebra kernel with a
-    single operation, so the interesting work happens in the passes that
-    lower them.
+    Holds one worked-through op (`blas.matvec`) and one defined in an
+    exercise (`blas.matmul`). Both name a whole dense-linear-algebra
+    kernel with a single operation, so the interesting work happens in
+    the passes that lower them.
   }];
   let cppNamespace = "::blas";
 }

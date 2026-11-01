@@ -37,8 +37,8 @@ LogicalResult MatVecOp::verify() {
 }
 
 // TODO(exercise): write `LogicalResult MatMulOp::verify()` here, modelled on
-// MatVecOp::verify above. Your blas.matmul definition sets
-// `let hasVerifier = 1;`, so this function must exist. If you forget it the
+// MatVecOp::verify above. The blas.matmul definition sets
+// `let hasVerifier = 1;`, so this function must exist. Without it the
 // plugin still builds (we link with -Wl,-z,undefs, because MLIR's own
 // symbols are resolved by mlir-opt at dlopen time) and then fails to load:
 //   mlir-opt: symbol lookup error: libBlasPlugin.so:

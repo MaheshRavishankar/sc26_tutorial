@@ -87,7 +87,7 @@
 \begin{lstlisting}[language=mlir]
 func.func @matmul(%a: memref<4x3xf32>, %b: memref<3x5xf32>,
                   %out: memref<4x5xf32>) {
-  // your nested scf.for loops go here
+  // write the nested scf.for loops here
   return
 }
 \end{lstlisting}
@@ -947,7 +947,7 @@ struct LowerBlasToSCFPass
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
     (@\hl<3>{patterns.add<MatVecToSCFPattern>(\&getContext());}@)
-    // TODO(exercise): register your pattern too:
+    // TODO(exercise): register the matmul pattern too:
     //   patterns.add<MatMulToSCFPattern>(&getContext());
 
     (@\hl<4>{\lkw{if} (failed(applyPatternsGreedily(getOperation(), std::move(patterns))))} \{@)

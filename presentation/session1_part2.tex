@@ -455,7 +455,7 @@ gpu.launch ... {
 void runOnOperation() override {
   RewritePatternSet patterns(&getContext());
   (@\hl<2>{patterns.add<MatVecToGPUPattern>(\&getContext());}@)
-  // TODO(exercise): register your pattern too:
+  // TODO(exercise): register the matmul pattern too:
   //   patterns.add<MatMulToGPUPattern>(&getContext());
   ...
 }
