@@ -146,7 +146,7 @@ main
  +- session1-part1-solution          matmul_scf.mlir, the ODS, the verifier, LowerBlasToSCF.cpp
  |   +- session1-part2-solution      ... plus LowerBlasToGPU.cpp
  +- session2-part1-solution          tile_linalg.mlir
- +- session2-part2-solution          distribute_linalg.mlir
+ +- session2-part2-solution          distribute_blocks.mlir
 ```
 
 `session1-part1-solution` is also what Part 2 clones, which is why session 1's

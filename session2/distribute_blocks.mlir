@@ -1,10 +1,10 @@
-// A transform dialect schedule that distributes a Linalg op across a GPU.
+// distribute_blocks.mlir -- EXERCISE.
 //
-// Written for linalg_matvec_gpu.mlir. Like part 1's schedule it matches Linalg
-// ops by interface, so it applies to linalg_matmul_gpu.mlir unchanged. mlir-opt
-// runs it with
+// Starts as a copy of distribute_rows.mlir, which distributes the rows of a
+// Linalg op across a GPU. Exercise 6 modifies it so that matmul is
+// distributed along its columns too. mlir-opt runs it with
 //
-//   --transform-preload-library=transform-library-paths=distribute_linalg.mlir
+//   --transform-preload-library=transform-library-paths=distribute_blocks.mlir
 //   --transform-interpreter
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(

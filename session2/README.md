@@ -167,9 +167,10 @@ Needs a GPU runtime (Runtime → Change runtime type → T4 GPU).
 | ------------------------ | ------------------------------------------------------------------------------- |
 | `linalg_matvec_gpu.mlir` | provided: `@matvec`, with its buffers registered for the GPU (`gpu.host_register`) |
 | `linalg_matmul_gpu.mlir` | provided: `@matmul`, likewise                                                     |
-| `distribute_linalg.mlir` | provided and written for matvec; **the attendee modifies it for matmul**          |
+| `distribute_rows.mlir`   | provided and written for matvec: distributes the rows                            |
+| `distribute_blocks.mlir` | starts as a copy of `distribute_rows.mlir`; **the attendee modifies it for matmul** |
 
-The schedule matches `interface{LinalgOp}` and tiles twice with
+`distribute_rows.mlir` matches `interface{LinalgOp}` and tiles twice with
 `tile_using_forall`, and **states the GPU mapping itself** (on the presenter's
 instruction, 2026-10-15: introduce the mapping from the start, then explain
 after the exercise why the chosen one is coalesced):
@@ -209,9 +210,9 @@ The exercise statement sits under the notebook's *Matmul, distributed along
 columns too* heading, not in step 2's introduction (on the presenter's
 instruction, 2026-10-16), so attendees run matvec and the provided schedule
 on matmul before they read it. It tells them to round-trip the schedule
-first; below it come four cells to run in order after every edit: the
-round-trip, applying the schedule to matmul, the check on the IR, and the
-run on the GPU.
+first; below it come a cell that opens `distribute_blocks.mlir`, then four
+cells to run in order after every edit: the round-trip, applying the
+schedule to matmul, the check on the IR, and the run on the GPU.
 
 Mistakes and what they produce (all verified):
 
@@ -228,16 +229,17 @@ Mistakes and what they produce (all verified):
 - **The modified schedule is for matmul only.** On matvec its second size
   lands on the reduction. `tile_using_forall` only *warns* (`tiling is not
   thread safe at axis #1`) and emits the parallel loop anyway, giving a
-  kernel whose threads race on `out[i]`. Every cell that runs the schedule
-  keeps `mlir-opt`'s stderr and fails if it mentions `not thread safe`, so
-  re-running the matvec cells after the exercise stops with a message
-  instead of a wrong answer.
+  kernel whose threads race on `out[i]`. That is why the exercise edits a
+  copy, `distribute_blocks.mlir`, and the matvec cells keep
+  `distribute_rows.mlir` (since 2026-11-01; before that the solved
+  walkthrough stopped at its matvec cell). Every cell that runs a schedule
+  still keeps `mlir-opt`'s stderr and fails if it mentions `not thread
+  safe`.
 
 | State                          | Stops at                            | With                                                                 |
 | ------------------------------ | ----------------------------------- | -------------------------------------------------------------------- |
 | schedule as provided           | the exercise check                  | `matmul is not distributed along columns yet -- each thread still computes a 1x256 slice of c` |
 | distributed, x on the rows     | the exercise check                  | `each thread computes one element, but x is not on the columns yet` |
-| modified, matvec cells re-run  | applying the schedule to matvec     | `tiling is not thread safe at axis #1` + the race message            |
 | exercise done                  | —                                   | runs clean end to end                                                |
 
 **Buffers a kernel has registered must stay alive.** `gpu.host_register`

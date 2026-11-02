@@ -198,7 +198,7 @@ module {
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Reference: \cd{distribute\_linalg.mlir}, Step 1 of 4 --- The Tilings}
+\begin{frame}[fragile]{Reference: \cd{distribute\_rows.mlir}, Step 1 of 4 --- The Tilings}
 \begin{lstlisting}[language=mlir]
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(
@@ -230,7 +230,7 @@ module attributes {transform.with_named_sequence} {
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Reference: \cd{distribute\_linalg.mlir}, Step 2 of 4 --- Building the Kernel}
+\begin{frame}[fragile]{Reference: \cd{distribute\_rows.mlir}, Step 2 of 4 --- Building the Kernel}
 \begin{lstlisting}[language=mlir]
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(...) {
@@ -260,7 +260,7 @@ module attributes {transform.with_named_sequence} {
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Reference: \cd{distribute\_linalg.mlir}, Step 3 of 4 --- Applied to Matvec}
+\begin{frame}[fragile]{Reference: \cd{distribute\_rows.mlir}, Step 3 of 4 --- Applied to Matvec}
 \begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.6}{7.9}\selectfont]
 (@\hl<2>{\lkw{gpu.launch} blocks(\%arg3, \%arg4, \%arg5) in (\%arg9 = \%c4, \%arg10 = \%c1\_4, \%arg11 = \%c1\_5)}@)
            (@\hl<2>{threads(\%arg6, \%arg7, \%arg8) in (\%arg12 = \%c32, \%arg13 = \%c1\_2, \%arg14 = \%c1\_3) \{}@)
@@ -373,9 +373,10 @@ linalg.matmul ins(%subview_9, %subview_10 : memref<1x512xf32, ...>, memref<512x2
 % =======================================================================
 \begin{frame}[fragile]{Exercise 6 --- Distribute Matmul along Columns Too}
   \begin{center}\large
-    Modify \cd{session2/distribute\_linalg.mlir} so that each thread computes
-    one \mbox{\cd{c[i, j]}}, in blocks of 32 $\times$ 32 threads: the
-    columns (\cd{j}) on x, the rows (\cd{i}) on y.
+    Modify \cd{session2/distribute\_blocks.mlir}, a copy of
+    \cd{distribute\_rows.mlir}, so that each thread computes one
+    \mbox{\cd{c[i, j]}}, in blocks of 32 $\times$ 32 threads: the columns
+    (\cd{j}) on x, the rows (\cd{i}) on y.
   \end{center}
   \vspace{0.1em}
   \textbf{What is different from matvec:}
@@ -389,7 +390,7 @@ linalg.matmul ins(%subview_9, %subview_10 : memref<1x512xf32, ...>, memref<512x2
   \vspace{0.3em}
   \textbf{Check after every save --- round-trip it}:
 \begin{lstlisting}[style=plain,basicstyle=\ttfamily\small]
-!mlir-opt distribute_linalg.mlir
+!mlir-opt distribute_blocks.mlir
 \end{lstlisting}
   \vspace{0.1em}
   \begin{itemize}
@@ -405,7 +406,7 @@ linalg.matmul ins(%subview_9, %subview_10 : memref<1x512xf32, ...>, memref<512x2
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Solution --- \cd{distribute\_linalg.mlir}, and What Changed}
+\begin{frame}[fragile]{Solution --- \cd{distribute\_blocks.mlir}, and What Changed}
 \begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.4}{7.6}\selectfont]
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(

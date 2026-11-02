@@ -108,10 +108,8 @@ higher.
   `[32, 32, 32]` schedule ("too many tiles provided, expected at most 2
   found 3").
 - **Session 2 Part 2**: one exercise, about 10 minutes. After an edit,
-  attendees run, in order, the round-trip (26), the apply (28), the check
-  (30) and the run (32). Not `Ctrl+F8` on any of them: it re-runs the matvec
-  cell (19), which stops on a schedule widened for matmul ("tiling is not
-  thread safe at axis #1"). **Known problem:** the walkthrough clones
-  `session2-part2-solution`, whose schedule is for matmul only, so its
-  matvec cell stops the same way on the first pass.
+  attendees run, in order, the round-trip (27), the apply (29), the check
+  (31) and the run (33). The exercise edits `distribute_blocks.mlir`, a copy
+  of the `distribute_rows.mlir` the matvec cells use, so re-running matvec
+  still works.
 
