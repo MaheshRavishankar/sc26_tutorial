@@ -320,7 +320,7 @@ linalg.matvec ins(%mat, %vec : ...) outs(%out : ...)
   \begin{itemize}
     \item<1-> Tiling splits a loop nest into two sets of loops:
       \begin{itemize}
-        \item Outer loops that step from one tile to the next;
+        \item Outer loops that iterate over tiles;
         \item Inner loops that do the computation within a tile;
         \item The same computation, in a different order.
       \end{itemize}
