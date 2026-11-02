@@ -507,8 +507,8 @@ scf.for %arg3 = %c0 to %c128 step %c32 {                                 // i, b
   \vspace{0.1em}
   \begin{itemize}
     \item That checks the schedule is well-formed, not that it does what was
-      intended. For that, re-run the matmul cell to apply it, then the check
-      after it: matmul's innermost op must work on 32 $\times$ 32 slices.
+      intended. For that, the cells below the exercise apply it to matmul and
+      check that its innermost op works on 32 $\times$ 32 slices.
   \end{itemize}
   \vspace{0.4em}
   \begin{center}\color{scaccent}\large

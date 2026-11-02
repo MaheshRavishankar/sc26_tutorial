@@ -102,8 +102,9 @@ higher.
   After an edit, attendees re-run the rebuild cell, the pass and the run on
   the GPU. If you are behind, type it yourself and narrate.
 - **Session 2 Part 1**: one exercise, about 10 minutes. After an edit,
-  attendees re-run the matmul cell (25) and then the check (27). Not
-  `Ctrl+F8` on the check: it re-runs the matvec cell (23), which stops on a
+  attendees run the three cells below the exercise, in order: the
+  round-trip (25), the apply (27) and the check (29). Not `Ctrl+F8` on any
+  of them: it re-runs the matvec cell (23), which stops on a
   `[32, 32, 32]` schedule ("too many tiles provided, expected at most 2
   found 3").
 - **Session 2 Part 2**: one exercise, about 10 minutes. After an edit,

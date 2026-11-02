@@ -50,11 +50,12 @@ Steps:
    `tile_using_for` with `[32, 32]`, so one schedule tiles both ops: both of
    matvec's loops, but only `i` and `j` of matmul. The exercise is to tile
    matmul's `k` loop too.
-   The schedule is applied in two cells, matvec and then matmul, and a third
-   cell checks that the innermost `linalg.matmul` works on 32×32 slices. After
-   editing the schedule, attendees round-trip it (well-formedness), then
-   re-run only the matmul cell and the check: the presenter steers them away
-   from re-running the matvec cell, which a `[32, 32, 32]` schedule fails. The next cell
+   The schedule is round-tripped and applied to matvec as provided. The
+   exercise comes after that, followed by the cells to run after every edit:
+   a second round-trip (well-formedness), applying the schedule to matmul,
+   and a check that the innermost `linalg.matmul` works on 32×32 slices.
+   Re-running the matvec cell is not part of that flow: a `[32, 32, 32]`
+   schedule fails it. The next cell
    redefines `CPU_LOWERING_PIPELINE` with `expand-strided-metadata` and
    `lower-affine` added, for the `memref.subview`s tiling introduced, and JITs
    the tiled matmul through the same numpy check. Matvec is tiled and shown, never
