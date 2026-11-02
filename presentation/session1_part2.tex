@@ -62,8 +62,7 @@
       the CPU.
     \item<2-> In this part, we lower the \alert{same op} to a \cd{gpu.launch}
       kernel and run it on a GPU.
-    \item<3-> First we read that kernel written by hand: it is what the
-      pattern has to build.
+    \item<3-> First we examine that kernel.
   \end{itemize}
 \end{frame}
 
@@ -443,8 +442,7 @@ gpu.launch ... {
   \begin{itemize}
     \item<2-> The store is Part 1's, indexed by \cd{row}: after the reduction
       loop, inside the launch body.
-    \item<3-> A launch body must end in \cd{gpu.terminator}, and nothing
-      creates it automatically.
+    \item<3-> A launch body must end in \cd{gpu.terminator}.
   \end{itemize}
 \end{frame}
 
@@ -497,7 +495,7 @@ void runOnOperation() override {
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Solution --- \cd{MatMulToGPUPattern}, and What Changed from Matvec}
+\begin{frame}[fragile]{Solution --- \cd{MatMulToGPUPattern}}
 \begin{lstlisting}[language=C++,morekeywords={auto,Value},basicstyle=\ttfamily\fontsize{6.6}{7.9}\selectfont]
 auto launchOp =        (@\only<2>{\color{scaccent}$\leftarrow$ a 2D grid: N threads in x, M in y}@)
     gpu::LaunchOp::create(rewriter, loc, c1, c1, c1, (@\df{N, M}@), c1);

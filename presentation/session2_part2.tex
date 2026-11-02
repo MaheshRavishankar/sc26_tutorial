@@ -1,4 +1,4 @@
-% SC26 MLIR tutorial -- Session 2, Part 2 (distributing Linalg on the GPU).
+% SC26 MLIR tutorial -- Session 2, Part 2 (Linalg Lowered to GPU).
 % Presenter deck.
 %
 % Build:  make            (the deck PDF)
@@ -406,7 +406,7 @@ linalg.matmul ins(%subview_9, %subview_10 : memref<1x512xf32, ...>, memref<512x2
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Solution --- \cd{distribute\_blocks.mlir}, and What Changed}
+\begin{frame}[fragile]{Solution --- \cd{distribute\_blocks.mlir}}
 \begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.4}{7.6}\selectfont]
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(

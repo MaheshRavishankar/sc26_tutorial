@@ -32,7 +32,7 @@
 \end{frame}
 
 % =======================================================================
-\begin{frame}{One level higher: Linalg}
+\begin{frame}{One Level Higher: Linalg Dialect}
   \begin{center}
   \begin{tikzpicture}[
       box/.style={draw=scblue,fill=scwash,rounded corners=2pt,inner sep=5pt,
@@ -64,7 +64,7 @@
   \begin{itemize}
     \item<1-> Session 1 defined \cd{blas.matmul} and wrote its
       lowering. \alert{Linalg} is a dialect that ships with MLIR: its ops
-      already mean matmul and matvec, and their lowering is already written.
+      already cover matmul and matvec, and their lowering is already written.
     \item<1-> Linalg is a more general representation of linear-algebra
       computations --- specifically \alert{einsum} computations, built on
       \alert{polyhedral} compilation methods.
@@ -320,7 +320,7 @@ linalg.matvec ins(%mat, %vec : ...) outs(%out : ...)
   \begin{itemize}
     \item<1-> Tiling splits a loop nest into two sets of loops:
       \begin{itemize}
-        \item Outer loops that iterate over tiles;
+        \item Outer loops that step from one tile to the next;
         \item Inner loops that do the computation within a tile;
         \item The same computation, in a different order.
       \end{itemize}
@@ -333,7 +333,7 @@ linalg.matvec ins(%mat, %vec : ...) outs(%out : ...)
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{The Tile Is Still a \cd{linalg.matmul}}
+\begin{frame}[fragile]{The Tile Is a \cd{linalg.matmul}}
   \begin{columns}[t]
     \begin{column}{0.35\textwidth}
       \begin{center}\small\textbf{the op we started with}\end{center}
@@ -517,7 +517,7 @@ scf.for %arg3 = %c0 to %c128 step %c32 {                                 // i, b
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Solution --- \cd{tile\_linalg.mlir}, and What Changed}
+\begin{frame}[fragile]{Solution --- \cd{tile\_linalg.mlir}}
 \begin{lstlisting}[language=mlir,basicstyle=\ttfamily\fontsize{6.6}{7.9}\selectfont]
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(

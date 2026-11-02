@@ -17,7 +17,7 @@
 \end{frame}
 
 % =======================================================================
-\begin{frame}{One Computation, Two Paths}
+\begin{frame}{Matrix-Matrix Multiplication in MLIR, Two Ways}
   \begin{center}
     Today's example is \alert{matmul}:\quad
     \cd{out[i, j] += sum\_k a[i, k] * b[k, j]}
@@ -313,7 +313,7 @@ run_and_check(module, "matmul", [a, b, out], expected=a @ b)
 \end{frame}
 
 % =======================================================================
-\section{Step 2 --- BLAS Dialect}
+\section{Step 2 --- \texttt{BLAS} Dialect}
 \begin{frame}[plain]\sectionpage\end{frame}
 
 \begin{frame}[fragile]{Defining a New Level of Abstraction}
@@ -516,7 +516,7 @@ let assemblyFormat =
   \end{itemize}
 \end{frame}
 
-\begin{frame}[fragile]{Reference: \cd{Blas\_MatVecOp}, Step 3 of 5 --- What TableGen Generates}
+\begin{frame}[fragile]{Reference: \cd{Blas\_MatVecOp}, Step 3 of 5 --- TableGen}
   From the ODS, \cd{mlir-tblgen} writes \cd{build/include/Blas/BlasOps.h.inc}:
 \begin{lstlisting}[language=C++,basicstyle=\ttfamily\scriptsize,morekeywords={class,static,void,const}]
 class MatVecOp : public ::mlir::Op<MatVecOp, ...> {
@@ -543,7 +543,7 @@ class MatVecOp : public ::mlir::Op<MatVecOp, ...> {
   \end{itemize}
 \end{frame}
 
-\begin{frame}{Reference: \cd{Blas\_MatVecOp}, Step 4 of 5 --- What ODS Cannot Say}
+\begin{frame}{Reference: \cd{Blas\_MatVecOp}, Step 4 of 5 --- ODS}
   \begin{itemize}
     \item<1-> ODS can say ``\alert{a 2D f32 memref and two 1D ones}''.
     \item<2-> ODS \alert{cannot} say ``\cd{mat}'s column count equals
@@ -628,7 +628,7 @@ LogicalResult MatVecOp::verify() {
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Solution --- The ODS, and What Changed from Matvec}
+\begin{frame}[fragile]{Solution --- ODS}
   \begin{stage}{5.8cm}
 \begin{lstlisting}[language=ods,deletestring={[b]"}]
 def Blas_(@\df{MatMulOp}@) : Blas_Op<"(@\df{matmul}@)"> {                  (@\only<2>{\color{scaccent}$\leftarrow$ a new name}@)
@@ -656,7 +656,7 @@ def Blas_(@\df{MatMulOp}@) : Blas_Op<"(@\df{matmul}@)"> {                  (@\on
   \end{stage}
 \end{frame}
 
-\begin{frame}[fragile]{Solution --- The Verifier, and What Changed from Matvec}
+\begin{frame}[fragile]{Solution --- Verifier}
 \begin{lstlisting}[language=C++,morekeywords={LogicalResult,auto,return},basicstyle=\ttfamily\scriptsize,stringstyle=\color{scink}]
 LogicalResult (@\df{MatMulOp}@)::verify() {
   auto aType = cast<MemRefType>(getA().getType());
@@ -986,7 +986,7 @@ struct LowerBlasToSCFPass
 \end{frame}
 
 % =======================================================================
-\begin{frame}{Exercise 3 --- Write the Lowering}
+\begin{frame}{Exercise 3 --- Writing the Lowering}
   \begin{center}\large
     \cd{MatMulToSCFPattern} in\\\cd{blas-dialect/lib/LowerBlasToSCF.cpp}
   \end{center}
@@ -1006,7 +1006,7 @@ struct LowerBlasToSCFPass
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Solution --- \cd{MatMulToSCFPattern}, and What Changed from Matvec}
+\begin{frame}[fragile]{Solution --- \cd{MatMulToSCFPattern}}
 \begin{lstlisting}[language=C++,morekeywords={auto,Value},basicstyle=\ttfamily\scriptsize]
 auto rowLoop = scf::ForOp::create(rewriter, loc, c0, M, c1);
 {
