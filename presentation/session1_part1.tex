@@ -188,7 +188,7 @@ func.func @matvec(%mat: memref<4x3xf32>, %vec: memref<3xf32>,
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Exercise 1 --- Write the Loop Nest}
+\begin{frame}[fragile]{Exercise 1 --- Writing the Loop Nest}
   \begin{center}\large
     Fill in \cd{@matmul} in \cd{session1/matmul\_scf.mlir}.
   \end{center}
@@ -601,7 +601,7 @@ LogicalResult MatVecOp::verify() {
 \end{frame}
 
 % =======================================================================
-\begin{frame}{Exercise 2 --- Define the Op}
+\begin{frame}{Exercise 2 --- Defining the Op}
   \textbf{2a. The ODS}\quad \cd{blas-dialect/include/Blas/BlasOps.td.txt}
   \begin{itemize}
     \item Define \cd{Blas\_MatMulOp} where the \cd{TODO} is, modelled on

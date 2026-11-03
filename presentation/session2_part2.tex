@@ -371,7 +371,7 @@ linalg.matmul ins(%subview_9, %subview_10 : memref<1x512xf32, ...>, memref<512x2
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Exercise 6 --- Distribute Matmul along Columns Too}
+\begin{frame}[fragile]{Exercise 6 --- Distributing Matmul along Columns Too}
   \begin{center}\large
     Modify \cd{session2/distribute\_blocks.mlir}, a copy of
     \cd{distribute\_rows.mlir}, so that each thread computes one
