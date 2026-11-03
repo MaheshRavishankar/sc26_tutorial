@@ -65,9 +65,9 @@
     \item<1-> Session 1 defined \cd{blas.matmul} and wrote its
       lowering. \alert{Linalg} is a dialect that ships with MLIR: its ops
       already cover matmul and matvec, and their lowering is already written.
-    \item<1-> Linalg is a more general representation of linear-algebra
-      computations --- specifically \alert{einsum} computations, built on
-      \alert{polyhedral} compilation methods.
+    \item<1-> Linalg models a class of linear-algebra computations ---
+      specifically \alert{einsum} computations --- using techniques from
+      the \alert{polyhedral} compilation domain.
     \item<2-> Linalg supports general loop transformations, like
       \alert{tiling}.
     \item<3-> Same computation, same single thread: \alert{does it get
