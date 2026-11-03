@@ -28,4 +28,3 @@ linalg_matmul_tiled.mlir
 linalg_matmul.o
 linalg_matmul_tiled.o
 linalg_*_gpu_*.mlir
-schedule_warnings.txt

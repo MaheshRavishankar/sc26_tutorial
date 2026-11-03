@@ -206,7 +206,7 @@ y), and `block_dims` becomes `[32, 32, 1]`. The check asserts that the
 innermost `linalg.matmul` writes a 1x1 slice of `c` **and** that the slice is
 cut at `[%thread_id_y, %thread_id_x]`.
 
-The exercise statement sits under the notebook's *Matmul, distributed along
+The exercise statement sits under the notebook's *Matmul: Distributing the
 columns too* heading, not in step 2's introduction (on the presenter's
 instruction, 2026-10-16), so attendees run matvec and the provided schedule
 on matmul before they read it. It tells them to round-trip the schedule
@@ -232,9 +232,9 @@ Mistakes and what they produce (all verified):
   kernel whose threads race on `out[i]`. That is why the exercise edits a
   copy, `distribute_blocks.mlir`, and the matvec cells keep
   `distribute_rows.mlir` (since 2026-11-01; before that the solved
-  walkthrough stopped at its matvec cell). Every cell that runs a schedule
-  still keeps `mlir-opt`'s stderr and fails if it mentions `not thread
-  safe`.
+  walkthrough stopped at its matvec cell). No cell checks for the warning
+  (since 2026-11-02, on the presenter's instruction); `mlir-opt` prints it
+  under the cell.
 
 | State                          | Stops at                            | With                                                                 |
 | ------------------------------ | ----------------------------------- | -------------------------------------------------------------------- |
