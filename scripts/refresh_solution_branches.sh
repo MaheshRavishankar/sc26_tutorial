@@ -25,14 +25,11 @@ cd "$(git rev-parse --show-toplevel)"
 start_branch=$(git symbolic-ref --quiet --short HEAD || git rev-parse HEAD)
 
 # This repo deliberately has no user.name/user.email configured, so the
-# cherry-picks below would have no committer. Borrow main's last author.
-if ! git config user.email >/dev/null; then
-  GIT_COMMITTER_NAME=$(git log -1 --format='%an' main)
-  GIT_COMMITTER_EMAIL=$(git log -1 --format='%ae' main)
-  GIT_AUTHOR_NAME=$GIT_COMMITTER_NAME
-  GIT_AUTHOR_EMAIL=$GIT_COMMITTER_EMAIL
-  export GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL
-fi
+# cherry-picks below would have no committer. Each replay borrows the
+# identity of the commit it replays, the solution's author. (Not main's
+# last author: that can be a collaborator whose PR was merged.)
+borrow_identity=false
+git config user.email >/dev/null || borrow_identity=true
 if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "error: working tree is dirty -- commit or stash first" >&2
   exit 1
@@ -47,6 +44,11 @@ replay() { # <base> <branch>
     return
   fi
   echo "==> replaying $branch onto $base"
+  if $borrow_identity; then
+    export GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+    GIT_COMMITTER_NAME=$(git log -1 --format='%an' "$tip")
+    GIT_COMMITTER_EMAIL=$(git log -1 --format='%ae' "$tip")
+  fi
   git switch --quiet --detach "$base"
   git cherry-pick "$tip"
   git branch --force "$branch" HEAD
