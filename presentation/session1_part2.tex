@@ -26,9 +26,10 @@
       again.
     \item<3-> \textbf{We start from the Part 1 solution.} The notebook clones the
       \cd{session1-part1-solution} branch, where \cd{blas.matmul} is already
-      defined. Nothing to re-type.
+      defined.
     \item<4-> \textbf{One exercise:} GPU lowering.
   \end{itemize}
+  \colab{2.2--2.8}
 \end{frame}
 
 % =======================================================================
@@ -133,6 +134,7 @@
       \cd{threadIdx}.
     \item<5-> Every thread runs the body, and \cd{gpu.terminator} ends it.
   \end{itemize}
+  \colab{2.10}
 \end{frame}
 
 % =======================================================================
@@ -165,6 +167,7 @@ func.func @matmul(%a: memref<4x3xf32>, %b: memref<3x5xf32>,
     \item<3-> One block of 5 $\times$ 4 threads: one thread per element of the
       4 $\times$ 5 \cd{out}.
   \end{itemize}
+  \colab<3>{2.12}
 \end{frame}
 
 % =======================================================================
@@ -228,6 +231,7 @@ gpu.launch blocks(%bx, %by, %bz) ... threads(%tx, %ty, %tz) ... {
     \item<5-> No explicit loops in the code over rows and columns:
       \alert{the 2D grid of threads spans those loops}.
   \end{itemize}
+  \colab<5>{2.14, 2.16}
 \end{frame}
 
 % =======================================================================
@@ -248,11 +252,12 @@ gpu-lower-to-nvvm-pipeline{cubin-chip=sm_75 cubin-format=bin
   \end{itemize}
   \vspace{0.4em}
   \visible<5->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
+  \colab<5>{2.18, 2.20}
 \end{frame}
 
 % =======================================================================
 \section{Step 2 --- Lowering \texttt{blas.matmul} to GPU}
-\begin{frame}[plain]\sectionpage\end{frame}
+\begin{frame}[plain]\sectionpage\colab{2.22, 2.23, 2.25}\end{frame}
 
 \begin{frame}[fragile]{Reference: \cd{MatVecToGPUPattern}, Step 1 of 5 --- Setup}
   \begin{columns}[t]
@@ -307,6 +312,7 @@ struct MatVecToGPUPattern : public OpRewritePattern<MatVecOp> {
     \item<3-> In \cd{MatMulToGPUPattern} all of this is \alert{provided}. The
       exercise starts below it.
   \end{itemize}
+  \colab{2.27}
 \end{frame}
 
 % =======================================================================
@@ -540,6 +546,7 @@ void runOnOperation() override {
   \vspace{0.3em}
   \visible<2->{\errbox{error: convert-blas-to-gpu did not convert 'blas.matmul' -{}- is its pattern\\
     written and registered in blas-dialect/lib/LowerBlasToGPU.cpp?}}
+  \colab<2>{2.28--2.32}
 \end{frame}
 
 % =======================================================================
