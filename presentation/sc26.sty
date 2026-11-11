@@ -122,3 +122,25 @@
     inner sep=5pt,font=\ttfamily\small]{#1};\end{center}}
 % Fixed-height area so staged code does not jump between overlays.
 \newenvironment{stage}[1]{\begin{overlayarea}{\textwidth}{#1}}{\end{overlayarea}}
+
+% --- Colab cell pointers --------------------------------------------------
+% \colab{1.12} or \colab<5>{1.20--1.23}, anywhere in a frame: a small tag at
+% the bottom left, opposite the frame number, naming the notebook cells to run
+% when switching to Colab here (the numbers written in each cell, see
+% scripts/number_cells.py). With an overlay spec it shows on those steps only;
+% \colab<5> on a 4-step frame adds a fifth step that only shows the tag. It is
+% drawn by the background template, which runs after the slide's body, so it
+% shows on plain frames too; drawing it clears it for the next slide.
+% scripts/check_colab_tags.py, run by the Makefile, checks that each deck's
+% tags name cells that exist and never run backwards.
+\def\sc@colabcells{}
+\newcommand<>{\colab}[1]{\only#2{\gdef\sc@colabcells{#1}}}
+\setbeamertemplate{background}{%
+  \ifx\sc@colabcells\@empty\else
+    \begin{tikzpicture}
+      \useasboundingbox (0,0) rectangle (\paperwidth,\paperheight);
+      \node[anchor=base west,inner sep=0pt,font=\scriptsize,text=scaccent]
+        at (0.4cm,0.2cm) {$\blacktriangleright$\,Colab \sc@colabcells};
+    \end{tikzpicture}%
+    \gdef\sc@colabcells{}%
+  \fi}

@@ -15,11 +15,14 @@ all: deck
 deck:    $(addsuffix .pdf,$(DECKS))
 handout: $(addsuffix _handout.pdf,$(DECKS))
 
+# The \colab{...} cell pointers must name cells that exist, in order.
 %.pdf: %.tex sc26.sty
+	python3 ../scripts/check_colab_tags.py $<
 	$(LATEXMK) $<
 
 # Overlays collapsed: beamer's own handout mode, one page per slide.
 %_handout.pdf: %.tex sc26.sty
+	python3 ../scripts/check_colab_tags.py $<
 	$(LATEXMK) -jobname=$*_handout \
 	    -pdflatex='pdflatex %O "\PassOptionsToClass{handout}{beamer}\input{%S}"' $<
 

@@ -75,6 +75,10 @@
 \end{frame}
 
 % =======================================================================
+\section{Step 0 --- Setup}
+\begin{frame}[plain]\sectionpage\colab{1.2--1.8}\end{frame}
+
+% =======================================================================
 \section{Step 1 --- Mat-Mult with Explicit Loops}
 \begin{frame}[plain]\sectionpage\end{frame}
 
@@ -99,7 +103,7 @@ func.func @matmul(%a: memref<4x3xf32>, %b: memref<3x5xf32>,
     \item<3-> The goal: \alert{execute} \cd{@matmul} and get the expected
       answer.
   \end{itemize}
-
+  \colab{1.10}
 \end{frame}
 
 % =======================================================================
@@ -131,27 +135,31 @@ func.func @matvec(%mat: memref<4x3xf32>, %vec: memref<3xf32>,
 \end{frame}
 
 \begin{frame}[fragile]{Reference: \cd{matvec\_scf.mlir}, Step 2 of 3 --- Reduction}
-  \begin{stage}{5.8cm}
+  \begin{stage}{6.4cm}
 \begin{lstlisting}[language=mlir]
 // the j-loop: out[i] += sum_j mat[i, j] * vec[j]
 (@\hl<2>{\%init = \lkw{memref.load} \%out[\%i] : \lkw{memref}<4xf32>}@)
-(@\hl<4>{\%acc}@) = scf.for %j = %c0 to %numCols step %c1
+(@\hl<5>{\%acc}@) = scf.for %j = %c0 to %numCols step %c1
                 (@\hl<2>{\lkw{iter\_args}(\%a = \%init)}@) -> (f32) {
-  %m = memref.load %mat[%i, %j] : memref<4x3xf32>
-  %v = memref.load %vec[%j] : memref<3xf32>
-  %prod = arith.mulf %m, %v : f32
-  (@\hl<3>{\%a2 = \lkw{arith.addf} \%a, \%prod : \lkw{f32}}@)
-  (@\hl<3>{\lkw{scf.yield} \%a2}@) : f32
+  (@\hl<3>{\%m = \lkw{memref.load} \%mat[\%i, \%j] : \lkw{memref}<4x3xf32>}@)
+  (@\hl<3>{\%v = \lkw{memref.load} \%vec[\%j] : \lkw{memref}<3xf32>}@)
+  (@\hl<3>{\%prod = \lkw{arith.mulf} \%m, \%v : \lkw{f32}}@)
+  (@\hl<4>{\%a2 = \lkw{arith.addf} \%a, \%prod : \lkw{f32}}@)
+  (@\hl<4>{\lkw{scf.yield} \%a2}@) : f32
 }
 \end{lstlisting}
-  \vspace{0.4em}
-  \begin{itemize}
+  \vspace{0.2em}
+  \begin{itemize}\setlength{\itemsep}{0pt}
+    \item The \cd{j}-loop is a \alert{reduction} loop, with \cd{\%a} acting
+      as the accumulator.
     \item<2-> On the \alert{first iteration}, \cd{\%a} is bound to
       \cd{\%init} --- the current \cd{out[i]}, so the sum starts from what
       \cd{out} already holds.
-    \item<3-> The body \alert{yields} a value, and that value is bound to
+    \item<3-> Each iteration \alert{loads} an element of \cd{\%mat} and of
+      \cd{\%vec} and multiplies them: its contribution, \cd{\%prod}.
+    \item<4-> The body \alert{yields} a value, and that value is bound to
       \cd{\%a} in the \alert{next iteration}.
-    \item<4-> The yield from the \alert{last iteration} is the result of the
+    \item<5-> The yield from the \alert{last iteration} is the result of the
       loop: \cd{\%acc}.
   \end{itemize}
   \end{stage}
@@ -203,15 +211,14 @@ func.func @matvec(%mat: memref<4x3xf32>, %vec: memref<3xf32>,
       \cd{b[k, j]}.
   \end{itemize}
   \vspace{0.5em}
-  \textbf{Check after every save} --- re-run the round-trip cell:
+  \textbf{Check after every save} --- re-run cell 1.12:
 \begin{lstlisting}[style=plain,basicstyle=\ttfamily\small]
 !mlir-opt matmul_scf.mlir
 \end{lstlisting}
   \vspace{0.2em}
   \begin{itemize}
-    \item No pass pipeline: \cd{mlir-opt} parses and re-prints, nothing else.
-    \item A clean round-trip means it \alert{parses and type-checks}, not
-      that it is right. We verify the answer together in the solution.
+    \item Round-trip: \cd{mlir-opt} parses and re-prints.
+    \item A clean round-trip means it \alert{parses and verifies}.
   \end{itemize}
   \vspace{0.5em}
   \begin{center}\color{scaccent}\large
@@ -246,6 +253,7 @@ func.func @matmul(%a: memref<4x3xf32>, %b: memref<3x5xf32>,
   return
 }
 \end{lstlisting}
+  \colab<5>{1.12, 1.14}
 \end{frame}
 
 % =======================================================================
@@ -270,6 +278,7 @@ reconcile-unrealized-casts           (@\only<8>{\color{scaccent}$\leftarrow$ cle
     \item<10-> The result is MLIR's \cd{llvm} \emph{dialect} --- not LLVM IR.
       Translation to real LLVM IR happens inside the execution engine.
   \end{itemize}
+  \colab<10>{1.16}
 \end{frame}
 
 % =======================================================================
@@ -292,6 +301,7 @@ run_and_check(module, "matmul", [a, b, out], expected=a @ b)
   \end{itemize}
   \vspace{0.4em}
   \visible<5->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
+  \colab<5>{1.18}
 \end{frame}
 
 % =======================================================================
@@ -405,6 +415,7 @@ blas.matmul %a, %b, %out
       \cd{BlasOps.cpp} adds what ODS cannot say.
     \item<2-> Then, \alert{write the lowering} that turns it into loops.
   \end{itemize}
+  \colab<3>{1.20--1.23}
 \end{frame}
 
 % =======================================================================
@@ -422,8 +433,8 @@ func.func @matmul(%a: memref<4x3xf32>, %b: memref<3x5xf32>,
   \begin{itemize}
     \item<2-> That is \cd{session1/matmul\_custom.mlir} --- the MLIR format we
       expect is in that file, already written.
-    \item<3-> To start with, round-tripping it \alert{fails}: the operation is
-      not defined yet.
+    \item<3-> Round-tripping it would \alert{fail}: the operation is not
+      defined yet.
   \end{itemize}
   \visible<3->{\errbox{matmul\_custom.mlir:5:3: error: custom op 'blas.matmul' is unknown}}
   \vspace{0.3em}
@@ -432,6 +443,7 @@ func.func @matmul(%a: memref<4x3xf32>, %b: memref<3x5xf32>,
       \alert{succeeds}: \cd{mlir-opt} parses the file and prints it back
       in the same syntax.
   \end{itemize}
+  \colab<2->{1.25}
 \end{frame}
 
 % =======================================================================
@@ -459,6 +471,7 @@ def Blas_MatVecOp : Blas_Op<"matvec"> {
     \item<4-> ODS generates the check for those types: a \cd{blas.matvec}
       with a 1D \cd{mat} is rejected with no hand-written C++.
   \end{itemize}
+  \colab{1.27}
 \end{frame}
 
 \begin{frame}[fragile]{Reference: \cd{Blas\_MatVecOp}, Step 2 of 5 --- Assembly Format}
@@ -467,6 +480,12 @@ let assemblyFormat =
   "$mat `,` $vec `,` $out attr-dict `:` type($mat) `,` type($vec) `,` type($out)";
 \end{lstlisting}
   \vspace{0.3em}
+  \begin{itemize}
+    \item From it, TableGen generates both the \alert{parser} (text to op)
+      and the \alert{printer} (op to text), so the two always agree.
+  \end{itemize}
+  \vspace{0.3em}
+  \visible<2->{%
   \begin{center}
   \begin{tikzpicture}[
       font=\ttfamily\scriptsize,
@@ -496,21 +515,17 @@ let assemblyFormat =
     \node[piece,above=1.1cm of ptb] (ftb) {\color{scaccent}type(\$vec)};
     \node[piece,above=1.1cm of ptc] (ftc) {\color{scaccent}type(\$out)};
 
-    \visible<2->{\draw[arr] (fa) -- (pa);}
-    \visible<3->{\draw[arr] (fb) -- (pb);
+    \visible<3->{\draw[arr] (fa) -- (pa);}
+    \visible<4->{\draw[arr] (fb) -- (pb);
                   \draw[arr] (fout) -- (pout);}
-    \visible<4->{\draw[arr] (fta) -- (pta);
+    \visible<5->{\draw[arr] (fta) -- (pta);
                   \draw[arr] (ftb) -- (ptb);
                   \draw[arr] (ftc) -- (ptc);}
   \end{tikzpicture}
-  \end{center}
+  \end{center}}
   \vspace{0.3em}
   \begin{itemize}
-    \item<5-> MLIR, like LLVM, calls the textual form of IR its
-      \alert{assembly}: this string is the op's syntax in a \cd{.mlir} file.
-    \item<6-> From it, TableGen generates both the \alert{parser} (text to op)
-      and the \alert{printer} (op to text), so the two always agree.
-    \item<7-> \cd{attr-dict} before the colon is \alert{not optional
+    \item<6-> \cd{attr-dict} before the colon is \alert{not optional
       boilerplate}. Leave it out and the op cannot carry attributes, which
       breaks things later in ways that look unrelated.
   \end{itemize}
@@ -533,8 +548,11 @@ class MatVecOp : public ::mlir::Op<MatVecOp, ...> {
   \vspace{0.25em}
   \begin{itemize}
     \item<2-> Every operand named in \cd{arguments} gets a \cd{get*}
-      accessor: \cd{\$mat} becomes \cd{getMat()}, \cd{\$out} becomes
-      \cd{getOut()}.
+      accessor:
+      \begin{itemize}
+        \item \cd{\$mat} used to generate \cd{getMat()}
+        \item \cd{\$out} used to generate \cd{getOut()}
+      \end{itemize}
     \item<5-> ODS generates the boilerplate --- accessors, builders, parser,
       printer --- and keeps operations, dialects and types \alert{consistent}
       across MLIR.
@@ -598,6 +616,7 @@ LogicalResult MatVecOp::verify() {
     \item<5-> The string is \alert{the op's own} error message --- what someone sees
       when they write a \cd{blas.matvec} whose shapes do not agree.
   \end{itemize}
+  \colab{1.29}
 \end{frame}
 
 % =======================================================================
@@ -647,9 +666,7 @@ def Blas_(@\df{MatMulOp}@) : Blas_Op<"(@\df{matmul}@)"> {                  (@\on
 \end{lstlisting}
   \vspace{0.4em}
   \begin{itemize}
-    \item<5-> Copy \cd{Blas\_MatVecOp}, rename it and its operands, and make
-      \cd{b} and \cd{out} 2D. That is all it is.
-    \item<6-> The generated C++ class is \cd{blas::MatMulOp}, with
+    \item<5-> The generated C++ class is \cd{blas::MatMulOp}, with
       \cd{getA()}, \cd{getB()} and \cd{getOut()} --- the names the lowering
       expects.
   \end{itemize}
@@ -659,27 +676,27 @@ def Blas_(@\df{MatMulOp}@) : Blas_Op<"(@\df{matmul}@)"> {                  (@\on
 \begin{frame}[fragile]{Solution --- Verifier}
 \begin{lstlisting}[language=C++,morekeywords={LogicalResult,auto,return},basicstyle=\ttfamily\scriptsize,stringstyle=\color{scink}]
 LogicalResult (@\df{MatMulOp}@)::verify() {
-  auto aType = cast<MemRefType>(getA().getType());
-  auto bType = cast<MemRefType>(getB().getType());
+  auto (@\df{aType}@) = cast<MemRefType>((@\df{getA}@)().getType());
+  auto (@\df{bType}@) = cast<MemRefType>((@\df{getB}@)().getType());
   auto outType = cast<MemRefType>(getOut().getType());
 
-  if (failed(verifyDimsMatch(*this, aType.getDimSize(1), bType.getDimSize(0),
-                             "inner dimensions must match")))
+  if (failed(verifyDimsMatch(*this, (@\df{aType}@).getDimSize(1), (@\df{bType}@).getDimSize(0),
+                             (@\df{"inner dimensions must match"}@))))
     return failure();
-  if (failed(verifyDimsMatch(*this, aType.getDimSize(0), outType.getDimSize(0),
-                             "row count of 'a' must match row count of 'out'")))
-    return failure();
+  (@\df{if (failed(}@)verifyDimsMatch(*this, (@\df{aType}@).getDimSize(0), outType.getDimSize(0),
+                             (@\df{"row count of 'a' must match row count of 'out'"}@)(@\df{)))}@)
+    (@\df{return failure();}@)
   (@\df{return verifyDimsMatch(*this, bType.getDimSize(1), outType.getDimSize(1),}@)
                          (@\df{"column count of 'b' must match column count of 'out'");}@)
 }
 \end{lstlisting}
   \vspace{0.3em}
   \begin{center}
-  \begin{tabular}{@{}lll@{}}
-    \small\textbf{constraint} & \small\textbf{why} & \\[0.2em]
-    \cd{a.dim(1) == b.dim(0)} & the reduction dimension & \small\color{scgrey}as in matvec\\
-    \cd{a.dim(0) == out.dim(0)} & rows & \small\color{scgrey}as in matvec\\
-    \textcolor{scaccent}{\cd{b.dim(1) == out.dim(1)}} & \textcolor{scaccent}{columns} & \small\textcolor{scaccent}{new}\\
+  \begin{tabular}{@{}ll@{}}
+    \small\textbf{constraint} & \small\textbf{why}\\[0.2em]
+    \cd{a.dim(1) == b.dim(0)} & the reduction dimension\\
+    \cd{a.dim(0) == out.dim(0)} & rows\\
+    \textcolor{scaccent}{\cd{b.dim(1) == out.dim(1)}} & \textcolor{scaccent}{columns}\\
   \end{tabular}
   \end{center}
 \end{frame}
@@ -696,30 +713,32 @@ LogicalResult (@\df{MatMulOp}@)::verify() {
 
     \node[box] (td) at (0,1.1)
       {BlasOps.td.txt\\[-0.1em]\normalfont\itshape\scriptsize Exercise 2a};
-    \visible<3->{
-      \node[box] (cpp) at (0,-1.1)
-        {BlasOps.cpp, LowerBlasToSCF.cpp\\[-0.1em]%
-         \normalfont\itshape\scriptsize Exercises 2b and 3};}
     \visible<2->{
       \node[gen] (inc) at (5.0,1.1) {BlasOps.h.inc\\[-0.1em]BlasOps.cpp.inc};
       \draw[arr] (td) -- node[lbl,above]{mlir-tblgen} (inc);}
-    \visible<4->{
+    \visible<3->{
+      \node[box] (cpp) at (0,-1.1)
+        {BlasOps.cpp, LowerBlasToSCF.cpp\\[-0.1em]%
+         \normalfont\itshape\scriptsize Exercises 2b and 3};
       \node[gen,draw=scgreen] (so) at (9.4,0) {libBlasPlugin.so};
       \draw[arr] (inc) -- (so);
       \draw[arr] (cpp) -- node[lbl,below,pos=0.55]{clang++} (so);}
-    \visible<5->{
+    \visible<4->{
       \node[box,draw=scaccent] (opt) at (9.4,-1.8) {mlir-opt};
       \draw[arr,draw=scaccent] (so) -- node[lbl,right]{dlopen} (opt);}
   \end{tikzpicture}
   \end{center}
   \vspace{0.5em}
   \begin{itemize}
-    \item<6-> \cd{.td.txt} and \cd{.cpp} are \alert{compiled into} the plugin.
-      \cd{.mlir} files are read \alert{fresh every time}.
-    \item<7-> So: edit MLIR, re-run the check. Edit C++ or TableGen,
-      \alert{re-run the build cell first}.
-    \item<8-> When a change seems to have no effect, this is why. Every time.
+    \item<2-> \cd{mlir-tblgen} turns the ODS into C++: the op's class
+      (\cd{BlasOps.h.inc}) and its definitions (\cd{BlasOps.cpp.inc}).
+    \item<3-> \cd{clang++} compiles the generated and the hand-written C++
+      into the plugin.
+    \item<4-> \cd{mlir-opt} loads the plugin at run time.
+    \item<5-> After editing a \cd{.td.txt} or \cd{.cpp} file,
+      \alert{rebuild the plugin} (cell 1.31) before round-tripping.
   \end{itemize}
+  \colab<5>{1.31}
 \end{frame}
 
 % =======================================================================
@@ -729,21 +748,54 @@ LogicalResult (@\df{MatMulOp}@)::verify() {
 \end{lstlisting}
   \vspace{0.5em}
   \begin{itemize}
-    \item<2-> Python's \cd{Context} knows nothing about our plugin, so
-      anything involving \cd{blas} shells out to \cd{mlir-opt}.
-    \item<3-> Success looks like \alert{\cd{blas.matmul} printed back in the same syntax}.
+    \item<2-> Success looks like \alert{\cd{blas.matmul} printed back in the same syntax}.
   \end{itemize}
   \vspace{0.5em}
-  \visible<4->{\errbox{matmul\_custom.mlir:5:3: error: custom op 'blas.matmul' is unknown}}
-  \visible<4->{\vspace{0.3em}
+  \visible<3->{\errbox{matmul\_custom.mlir:5:3: error: custom op 'blas.matmul' is unknown}}
+  \visible<3->{\vspace{0.3em}
   \begin{center}\small
     Either the op is not defined --- or \alert{the plugin did not rebuild}.
-    In a room this size, it is the rebuild.
   \end{center}}
+  \colab{1.32--1.34}
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 1 of 5 --- Scaffolding}
+\section{Step 3 --- Lowering \texttt{blas} to Loops}
+\begin{frame}[plain]\sectionpage\end{frame}
+
+\begin{frame}[fragile]{From \texttt{blas.matvec} to Loops}
+  \begin{center}
+  \begin{tikzpicture}[
+      box/.style={draw=scblue,fill=scwash,rounded corners=2pt,inner sep=5pt,
+                  font=\ttfamily\scriptsize,align=left},
+      arr/.style={-{Stealth[length=2mm]},draw=scaccent},
+      lbl/.style={font=\scriptsize\ttfamily,color=scaccent}]
+    \node[box] (op) at (0,0) {blas.matvec \%mat, \%vec, \%out};
+    \node[box,below=0.9cm of op] (loops)
+      {scf.for \%i = \%c0 to \%numRows step \%c1 \{\\
+       \ \ \%init = memref.load \%out[\%i]\\
+       \ \ \%acc = scf.for \%j = ... iter\_args(\%a = \%init) \{\\
+       \ \ \ \ ...\\
+       \ \ \}\\
+       \ \ memref.store \%acc, \%out[\%i]\\
+       \}};
+    \draw[arr] (op) -- node[lbl,right]{convert-blas-to-scf} (loops);
+  \end{tikzpicture}
+  \end{center}
+  \vspace{0.5em}
+  \begin{itemize}
+    \item<2-> The pass \cd{convert-blas-to-scf}, in \cd{LowerBlasToSCF.cpp},
+      lowers each \cd{blas} op to \cd{scf.for} loops.
+    \item<3-> It is a set of \alert{rewrite patterns}, one per op:
+      \cd{MatVecToSCFPattern} for \cd{blas.matvec}.
+    \item<4-> Exercise 3 adds \cd{MatMulToSCFPattern}, which builds the loops
+      from Step 1.
+  \end{itemize}
+  \colab<4>{1.36}
+\end{frame}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 1 of 6 --- Scaffolding}
   \begin{columns}[t]
     \begin{column}{0.59\textwidth}
       \begin{center}\small\textbf{the C++}\end{center}
@@ -758,8 +810,8 @@ LogicalResult (@\df{MatMulOp}@)::verify() {
 
     (@\hl<3>{\lkw{Value} c0 = arith::ConstantIndexOp::create(rewriter, loc, 0);}@)
     (@\hl<3>{\lkw{Value} c1 = arith::ConstantIndexOp::create(rewriter, loc, 1);}@)
-    (@\hl<4>{\lkw{Value} numRows = memref::DimOp::create(rewriter, loc, mat, c0);}@)
-    (@\hl<4>{\lkw{Value} numCols = memref::DimOp::create(rewriter, loc, mat, c1);}@)
+    (@\hl<3>{\lkw{Value} numRows = memref::DimOp::create(rewriter, loc, mat, c0);}@)
+    (@\hl<3>{\lkw{Value} numCols = memref::DimOp::create(rewriter, loc, mat, c1);}@)
     // steps 2-4 go here
     rewriter.eraseOp(op);
     return success();
@@ -780,8 +832,8 @@ LogicalResult (@\df{MatMulOp}@)::verify() {
 
 (@\visible<3->{\hl<3>{\%c0 = \lkw{arith.constant} 0 : \lkw{index}}}@)
 (@\visible<3->{\hl<3>{\%c1 = \lkw{arith.constant} 1 : \lkw{index}}}@)
-(@\visible<4->{\hl<4>{\%numRows = \lkw{memref.dim} \%mat, \%c0}}@)
-(@\visible<4->{\hl<4>{\%numCols = \lkw{memref.dim} \%mat, \%c1}}@)
+(@\visible<3->{\hl<3>{\%numRows = \lkw{memref.dim} \%mat, \%c0}}@)
+(@\visible<3->{\hl<3>{\%numCols = \lkw{memref.dim} \%mat, \%c1}}@)
 \end{lstlisting}
     \end{column}
   \end{columns}
@@ -790,14 +842,12 @@ LogicalResult (@\df{MatMulOp}@)::verify() {
     \item<2-> A pattern \alert{matches one op}:
       \cd{OpRewritePattern<MatVecOp>} rewrites \cd{blas.matvec} and nothing
       else.
-    \item<3-> First the index constants, \cd{0} and \cd{1}, for the loop
-      bounds and steps.
-    \item<4-> Then the dimensions of the matrix, with \cd{memref.dim}:
+    \item<3-> Then the dimensions of the matrix, with \cd{memref.dim}:
       \cd{c0} and \cd{c1} say which dimension.
   \end{itemize}
 \end{frame}
 
-\begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 2 of 5 --- Row Loop}
+\begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 2 of 6 --- Row Loop}
   \begin{columns}[t]
     \begin{column}{0.59\textwidth}
       \begin{center}\small\textbf{the C++}\end{center}
@@ -832,11 +882,11 @@ LogicalResult (@\df{MatMulOp}@)::verify() {
     \item<3-> Ops created after \cd{setInsertionPointToStart} land
       \alert{inside} that loop's body.
     \item<4-> \cd{InsertionGuard} restores the insertion point when the scope
-      ends. Leave it out and later ops land in the wrong block.
+      ends.
   \end{itemize}
 \end{frame}
 
-\begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 3 of 5 --- Reduction Loop}
+\begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 3 of 6 --- Reduction Loop}
   \begin{columns}[t]
     \begin{column}{0.59\textwidth}
       \begin{center}\small\textbf{the C++}\end{center}
@@ -889,7 +939,7 @@ LogicalResult (@\df{MatMulOp}@)::verify() {
   \end{columns}
 \end{frame}
 
-\begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 4 of 5 --- Store}
+\begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 4 of 6 --- Store}
   \begin{columns}[t]
     \begin{column}{0.62\textwidth}
       \begin{center}\small\textbf{the C++}\end{center}
@@ -939,7 +989,33 @@ scf.for %i = %c0 to %numRows step %c1 {
 \end{frame}
 
 % =======================================================================
-\begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 5 of 5 --- Registration}
+\begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 5 of 6 --- Pass Declaration}
+  \cd{blas-dialect/include/Blas/Passes.td}:
+\begin{lstlisting}[language=ods,basicstyle=\ttfamily\scriptsize]
+def (@\hl<5>{LowerBlasToSCFPass}@) : Pass<(@\hl<2>{"convert-blas-to-scf"}@), (@\hl<3>{"::mlir::func::FuncOp"}@)> {
+  let summary = "Lower blas ops to scf.for loops";
+  (@\hl<4>{\lkw{let} dependentDialects = [}@)
+    (@\hl<4>{"::mlir::scf::SCFDialect",}@)
+    (@\hl<4>{"::mlir::memref::MemRefDialect",}@)
+    (@\hl<4>{"::mlir::arith::ArithDialect",}@)
+  (@\hl<4>{];}@)
+}
+\end{lstlisting}
+  \vspace{0.4em}
+  \begin{itemize}
+    \item<2-> \cd{"convert-blas-to-scf"} is the pass's name on the
+      \cd{mlir-opt} command line.
+    \item<3-> \cd{::mlir::func::FuncOp} makes it a function-level pass:
+      \cd{runOnOperation()} runs on each \cd{func.func}.
+    \item<4-> \cd{dependentDialects} lists the dialects whose ops the pass
+      creates.
+    \item<5-> \cd{mlir-tblgen} generates a base class,
+      \cd{LowerBlasToSCFPassBase}, and the pass derives from it.
+  \end{itemize}
+\end{frame}
+
+% =======================================================================
+\begin{frame}[fragile]{Reference: \cd{MatVecToSCFPattern}, Step 6 of 6 --- Pattern Registration}
   \cd{LowerBlasToSCF.cpp}, the pass the pattern belongs to:
 \begin{lstlisting}[language=C++,basicstyle=\ttfamily\scriptsize,morekeywords={void,override,struct,public}]
 struct LowerBlasToSCFPass
@@ -960,9 +1036,8 @@ struct LowerBlasToSCFPass
 \end{lstlisting}
   \vspace{0.3em}
   \begin{itemize}
-    \item<2-> The pass's name, \cd{convert-blas-to-scf}, is declared in
-      \cd{Passes.td}, in TableGen like the op, which generates this base
-      class; the plugin registers the pass with \cd{mlir-opt}.
+    \item<2-> The base class generated from \cd{Passes.td}; the plugin
+      registers the pass with \cd{mlir-opt}.
     \item<3-> \cd{patterns.add<...>} registers a pattern with the pass.
       \cd{MatMulToSCFPattern} goes on the same line.
     \item<4-> \cd{applyPatternsGreedily} applies them to the IR the pass runs
@@ -1053,6 +1128,7 @@ void runOnOperation() override {
   \vspace{0.3em}
   \visible<3->{\errbox{error: convert-blas-to-scf did not convert 'blas.matmul' -{}- is its pattern\\
     written and registered in blas-dialect/lib/LowerBlasToSCF.cpp?}}
+  \colab<3>{1.37--1.41}
 \end{frame}
 
 % =======================================================================

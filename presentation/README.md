@@ -83,18 +83,29 @@ needs this re-run. Never edit a `*_walkthrough.ipynb` by hand.
 Open the walkthrough notebook in Colab from your own account and keep the
 attendee notebook in a second tab, unsolved --- that is how you show what a
 cell does *before* the exercise is written. Before the room fills, run the
-walkthrough's setup cells (3--8; on a T4 runtime for the GPU parts): the
-toolchain download is the slowest thing in every part and teaches nothing.
-For Session 1, run the first plugin build too (Part 1: cells 20 and 21; Part
-2: cells 22 and 23).
+walkthrough's setup cells (1.3--1.8 in Session 1 Part 1, and the same
+cells in the other parts: 2.3--2.8, 3.3--3.8, 4.3--4.8, on a T4 runtime for
+the GPU parts): the toolchain download is the slowest thing in every part
+and teaches nothing. For Session 1, run the first plugin build too (Part 1:
+cells 1.20 and 1.21; Part 2: cells 2.22 and 2.23).
 
-Cell numbers below are the attendee notebook's; the walkthrough's are one
-higher.
+Every notebook cell carries its number, `[1.12]` for Session 1 Part 1's
+twelfth cell, in its heading, its first bold words or its first comment line.
+The attendee notebook and the walkthrough share the numbers; the
+walkthrough's extra first cell has none. `scripts/number_cells.py` writes
+them; re-run it after adding or removing a cell, then regenerate the
+walkthroughs and update the references to the cells that moved.
+
+The slides say when to switch to Colab: a small orange tag at the bottom
+left, "Colab 1.20--1.23", names the cells to run there. It is
+`\colab{...}` in the `.tex` (`\colab<5>{...}` on step 5 only,
+`\colab<2->{...}` from step 2 on); `make` checks that every deck's tags
+name cells that exist, in order.
 
 - **Session 1 Part 1**, 90 minutes: 10 setup, 30 for step 1, 28 for defining
   the op, 17 for the lowering, 5 to wrap up. Keyboard time is 12 minutes for
   Exercise 1, 12 for Exercise 2 (both parts) and 10 for Exercise 3. Before
-  Exercise 1, run the attendee notebook's JIT check (cell 17) to show the
+  Exercise 1, run the attendee notebook's JIT check (cell 1.18) to show the
   all-zero result: an empty function parses and runs, so a clean parse is
   not a passing test. If you are behind at Exercise 3, type it yourself and
   narrate.
@@ -103,13 +114,13 @@ higher.
   the GPU. If you are behind, type it yourself and narrate.
 - **Session 2 Part 1**: one exercise, about 10 minutes. After an edit,
   attendees run the three cells below the exercise, in order: the
-  round-trip (25), the apply (27) and the check (29). Not `Ctrl+F8` on any
-  of them: it re-runs the matvec cell (23), which stops on a
+  round-trip (3.26), the apply (3.28) and the check (3.30). Not `Ctrl+F8` on
+  any of them: it re-runs the matvec cell (3.24), which stops on a
   `[32, 32, 32]` schedule ("too many tiles provided, expected at most 2
   found 3").
 - **Session 2 Part 2**: one exercise, about 10 minutes. After an edit,
-  attendees run, in order, the round-trip (27), the apply (29), the check
-  (31) and the run (33). The exercise edits `distribute_blocks.mlir`, a copy
+  attendees run, in order, the round-trip (4.28), the apply (4.30), the
+  check (4.32) and the run (4.34). The exercise edits `distribute_blocks.mlir`, a copy
   of the `distribute_rows.mlir` the matvec cells use, so re-running matvec
   still works.
 

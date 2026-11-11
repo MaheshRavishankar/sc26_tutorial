@@ -65,7 +65,7 @@ hasn't been done, and the failure names what is missing:
 | nothing written              | the JIT check in step 1  | all-zero result vs. numpy                               |
 | step 1 done                  | the round-trip in step 2 | `custom op 'blas.matmul' is unknown` (Part 1 only)      |
 | ODS written, verifier not    | the round-trip in step 2 | `undefined symbol: _ZN4blas8MatMulOp6verifyEv` (Part 1 only) |
-| ODS + verifier done          | the pass in step 2       | `convert-blas-to-{scf,gpu} did not convert 'blas.matmul'` |
+| ODS + verifier done          | the pass (Part 1 step 3, Part 2 step 2) | `convert-blas-to-{scf,gpu} did not convert 'blas.matmul'` |
 | everything done              | —                        | runs clean end to end                                   |
 
 Part 2 starts two rows down that table: it clones a branch on which the op is
@@ -96,12 +96,13 @@ No GPU runtime needed. Step numbers are local to this notebook.
   `mlir-opt`, lower it through the LLVM dialect, JIT-compile it, and check it
   against numpy. Reference: `matvec_scf.mlir`.
 - **Step 2 — the `blas` dialect.** `blas.matmul` is a single custom op
-  standing in for the whole computation, lowered to step 1's SCF form by
-  `convert-blas-to-scf`. The step first builds the plugin as shipped and
-  round-trips `matvec_custom.mlir` through it. Then two exercises: Exercise 2
-  defines the op, in two parts (2a the ODS, 2b the verifier), and Exercise 3
-  writes `MatMulToSCFPattern`, which lowers it. References: the `matvec`
-  version of each, next to the `TODO`.
+  standing in for the whole computation. The step first builds the plugin
+  as shipped and round-trips `matvec_custom.mlir` through it. Then Exercise 2
+  defines the op, in two parts (2a the ODS, 2b the verifier). References:
+  the `matvec` version of each, next to the `TODO`.
+- **Step 3 — lowering `blas` to loops.** `convert-blas-to-scf` lowers the op
+  to step 1's SCF form, one rewrite pattern per op. Exercise 3 writes
+  `MatMulToSCFPattern`. Reference: `MatVecToSCFPattern`, in the same file.
 
 ## Part 2 — GPU (`session1_part2_gpu.ipynb`)
 
