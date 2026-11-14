@@ -19,16 +19,10 @@
 % =======================================================================
 \begin{frame}{Setup}
   \begin{itemize}
-    \item<1-> \textbf{It is a fresh runtime.} Nothing from Session 1 carries
-      over, so the notebook downloads the same toolchain again. Any runtime
-      will do: this part runs on the CPU.
-    \item<2-> \textbf{The exercise edits one MLIR file, a schedule.} No C++ and no
-      rebuild in this session: edit, save, re-run the cell.
-    \item<3-> \textbf{One exercise:} tile matmul's third loop. Steps 1 and 3
-      we read and run together.
-    \item<4-> \textbf{Colab trick:} \cd{Ctrl+F8} runs every cell above the
-      current one, to catch up after losing track.
+    \item \textbf{Run the setup cells:} this is a fresh runtime, so the
+      notebook downloads the toolchain again.
   \end{itemize}
+  \colab{3.2--3.8}
 \end{frame}
 
 % =======================================================================
@@ -54,10 +48,6 @@
         {a transform\\schedule} (tiled.west);
       \draw[arr] (tiled.east) -| (scf.south);
     }
-    \visible<3->{
-      \node[lbl,below=0.25cm of run,font=\small\itshape,color=scaccent]
-        {faster?};
-    }
   \end{tikzpicture}
   \end{center}
   \vspace{0.2em}
@@ -70,8 +60,6 @@
       the \alert{polyhedral} compilation domain.
     \item<2-> Linalg supports general loop transformations, like
       \alert{tiling}.
-    \item<3-> Same computation, same single thread: \alert{does it get
-      faster?}
   \end{itemize}
 \end{frame}
 
@@ -93,7 +81,7 @@
     \node[font=\ttfamily\footnotesize,align=left,anchor=east] at (-0.65,-0.45) {%
       \hl<1>{\lkw{for} i \lkw{in} range(4):}\\
       \hphantom{fo}\hl<1>{\lkw{for} j \lkw{in} range(8):}\\
-      \hphantom{for }\hl<3>{c\hl<2>{[i, j]} = a\hl<2>{[i, j]} + b\hl<2>{[j]}}};
+      \hphantom{for }\hl<2>{c\hl<3>{[i, j]} = a\hl<3>{[i, j]} + b\hl<3>{[j]}}};
     % the iteration space: one point per (i, j), 4 x 8
     \foreach \i in {0,...,3} {
       \foreach \j in {0,...,7} {
@@ -107,7 +95,7 @@
     \draw[-{Stealth[length=1.2mm]},scgrey] (-0.25,0.05) -- node[left,lbl]{\cd{i}}
       (-0.25,-1.0);
 
-    \visible<2->{
+    \visible<3->{
       % the data: a and c are 4 x 8, b has 8 elements; (i, j) = (1, 5)
       \fill[scaccent!45] (7.2,0.9) rectangle (7.4,1.1);
       \fill[scaccent!45] (7.2,-0.55) rectangle (7.4,-0.35);
@@ -123,7 +111,7 @@
       \draw[arr] (1.5,-0.3) -- node[mp,pos=0.5]{(i, j) -> (j)} (7.2,-0.45);
       \draw[arr] (1.5,-0.3) -- node[mp,pos=0.5]{(i, j) -> (i, j)} (7.2,-1.7);
     }
-    \visible<3->{
+    \visible<2->{
       \node[lbl,color=scaccent,align=center] at (1.05,-1.65)
         {at each point:\\\texttt{c[i, j] = a[i, j] + b[j]}};
     }
@@ -133,10 +121,10 @@
   \begin{itemize}
     \item<1-> The loops span an \alert{iteration space}: one point per
       \cd{(i, j)}.
-    \item<2-> Each access is a \alert{map} from that space to the data: the
+    \item<2-> Each point runs the \alert{loop body} once.
+    \item<3-> Each access is a \alert{map} from that space to the data: the
       point \cd{(i, j)} reads \cd{a[i, j]} and \cd{b[j]}, and writes
       \cd{c[i, j]}.
-    \item<3-> Each point runs the \alert{loop body} once.
   \end{itemize}
 \end{frame}
 
@@ -226,6 +214,7 @@ linalg.matvec ins(%mat, %vec : ...) outs(%out : ...)
       \alert{\cd{LinalgOp} interface}, and Linalg transformations are written
       against that interface, so any transformation applies to all of them.
   \end{itemize}
+  \colab<1-2>{3.10, 3.12}\colab<3->{3.14}
 \end{frame}
 
 % =======================================================================
@@ -234,9 +223,9 @@ linalg.matvec ins(%mat, %vec : ...) outs(%out : ...)
   \cd{@matvec}:
 \begin{lstlisting}[language=mlir]
 %c0 = arith.constant 0 : index
-%c128 = arith.constant 128 : index
+(@\hl<2>{\%c128 = \lkw{arith.constant} 128 : \lkw{index}}@)
 %c1 = arith.constant 1 : index
-%c512 = arith.constant 512 : index
+(@\hl<2>{\%c512 = \lkw{arith.constant} 512 : \lkw{index}}@)
 (@\hl<2>{\lkw{scf.for} \%arg3 = \%c0 \lkw{to} \%c128 \lkw{step} \%c1 \{}@)                      // i
   (@\hl<2>{\lkw{scf.for} \%arg4 = \%c0 \lkw{to} \%c512 \lkw{step} \%c1 \{}@)                    // j
     (@\hl<3>{\%0 = \lkw{memref.load} \%arg0[\%arg3, \%arg4] : \lkw{memref}<128x512xf32>}@)
@@ -250,7 +239,8 @@ linalg.matvec ins(%mat, %vec : ...) outs(%out : ...)
 \end{lstlisting}
   \vspace{0.2em}
   \begin{itemize}
-    \item<2-> One \cd{scf.for} per iterator type: \cd{i}, \cd{j}.
+    \item<2-> One \cd{scf.for} per iterator type: \cd{i}, \cd{j}. Their
+      bounds come from the operands' shapes (128~$\times$~512).
     \item<3-> A load of each input, at the indices its map selects.
     \item<4-> A load of \cd{out} too: \cd{j} is a \alert{reduction}, so every
       point along \cd{j} adds into the same \cd{out[i]}, and the body reads
@@ -258,6 +248,7 @@ linalg.matvec ins(%mat, %vec : ...) outs(%out : ...)
     \item<5-> The body, then a store back into \cd{out}. It is Session 1's
       \cd{matvec\_scf.mlir}, generated.
   \end{itemize}
+  \colab{3.16}
 \end{frame}
 
 % =======================================================================
@@ -274,6 +265,7 @@ linalg.matvec ins(%mat, %vec : ...) outs(%out : ...)
   \end{itemize}
   \vspace{0.2em}
   \visible<3->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
+  \colab{3.18}
 \end{frame}
 
 % =======================================================================
@@ -433,6 +425,7 @@ module attributes {transform.with_named_sequence} {
     \item<5-> It returns the tiled op, then one handle per loop it created:
       \cd{\%loops:2}.
   \end{itemize}
+  \colab{3.20, 3.22}
 \end{frame}
 
 % =======================================================================
@@ -453,14 +446,16 @@ module attributes {transform.with_named_sequence} {
       loops are tiled.
     \item<3-> \cd{memref.subview} takes a 32-wide \alert{view} of each
       operand: offsets, sizes, strides. Nothing is copied.
-    \item<4-> Each slice follows its operand's indexing map. \cd{vec}'s is
-      \cd{(i, j) -> (j)}, so its slice moves with the \cd{j} loop
-      (\cd{\%arg4}); \cd{out}'s is \cd{(i, j) -> (i)}, so it moves with the
-      \cd{i} loop (\cd{\%arg3}). \cd{mat}'s is the identity: it moves with
-      both.
-    \item<5-> Inside, the original op on those slices. Still Linalg: tiling
-      restructures the loops, it lowers nothing.
+    \item<4-> The offsets of each slice come from its operand's indexing map,
+      with \cd{i} as \cd{\%arg3} and \cd{j} as \cd{\%arg4}:
+      \begin{itemize}
+        \item \cd{mat}: \cd{(i, j) -> (i, j)} gives \cd{[\%arg3, \%arg4]}
+        \item \cd{vec}: \cd{(i, j) -> (j)} gives \cd{[\%arg4]}
+        \item \cd{out}: \cd{(i, j) -> (i)} gives \cd{[\%arg3]}
+      \end{itemize}
+    \item<5-> Inside, the original op on those slices.
   \end{itemize}
+  \colab{3.24}
 \end{frame}
 
 % =======================================================================
@@ -541,6 +536,7 @@ module attributes {transform.with_named_sequence} {
   \begin{itemize}
     \item<2-> Another option: \cd{[32, 32, 32]} in the first step.
   \end{itemize}
+  \colab{3.26}
 \end{frame}
 
 % =======================================================================
@@ -565,12 +561,18 @@ scf.for %arg3 = %c0 to %c128 step %c32 {                                  // i, 
   \vspace{0.2em}
   \begin{itemize}
     \item<2-> A third tile loop, over \cd{k}, stepping by 32.
-    \item<3-> It takes a \alert{subview of a subview}: \cd{\%subview\_6} is cut
-      from \cd{\%subview}, the 32 $\times$ 512 strip of \cd{a} that tiling
-      \cd{i} and \cd{j} made, not from \cd{a} itself. The same for \cd{b}.
+    \item<3-> The \cd{k} tiles are \alert{subviews of subviews}, cut from the
+      strips that tiling \cd{i} and \cd{j} made:
+      \begin{itemize}
+        \item \cd{\%subview\_6}: 32 $\times$ 32 from \cd{\%subview}, the
+          32 $\times$ 512 strip of \cd{a}
+        \item \cd{\%subview\_7}: 32 $\times$ 32 from \cd{\%subview\_2}, the
+          512 $\times$ 32 strip of \cd{b}
+      \end{itemize}
     \item<4-> The check: every operand of the innermost \cd{linalg.matmul} is
       32 $\times$ 32.
   \end{itemize}
+  \colab<1-3>{3.28}\colab<4->{3.30}
 \end{frame}
 
 % =======================================================================
@@ -590,6 +592,7 @@ convert-linalg-to-loops
   \end{itemize}
   \vspace{0.2em}
   \visible<4->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
+  \colab{3.32}
 \end{frame}
 
 % =======================================================================
@@ -616,6 +619,7 @@ convert-linalg-to-loops
   \begin{center}\scriptsize\color{scgrey}
     one run on a desktop CPU --- Colab's will differ
   \end{center}}
+  \colab{3.34}
 \end{frame}
 
 % =======================================================================
@@ -641,6 +645,7 @@ convert-linalg-to-loops
     \item<3-> Untiled: \alert{scalar only}. Tiled: \alert{packed}, 8 or 16
       floats at once, depending on the CPU.
   \end{itemize}
+  \colab{3.36, 3.37}
 \end{frame}
 
 % =======================================================================
