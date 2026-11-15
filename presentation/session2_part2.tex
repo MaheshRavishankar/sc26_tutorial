@@ -396,7 +396,7 @@ linalg.matmul ins(%subview_9, %subview_10 : memref<1x512xf32, ...>, memref<512x2
   \vspace{0.1em}
   \begin{itemize}
     \item That checks the schedule is well-formed, not that it does what was
-      intended. For that, run the check under \emph{Matmul, distributed along
+      intended. For that, run the check under \emph{Matmul: Distributing the
       columns too}: matmul's innermost op must write a 1 $\times$ 1 slice of
       \cd{c}, cut at \cd{[\%thread\_id\_y, \%thread\_id\_x]}.
   \end{itemize}
