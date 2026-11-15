@@ -123,6 +123,26 @@
 % Fixed-height area so staged code does not jump between overlays.
 \newenvironment{stage}[1]{\begin{overlayarea}{\textwidth}{#1}}{\end{overlayarea}}
 
+% --- Colab notebook link -------------------------------------------------
+% \colabnotebook{session1/session1_part1_cpu.ipynb}, on a setup slide: the
+% repository and the notebook's path in it, for attendees to open the notebook
+% in Colab. In the PDF the repository links to GitHub, the path to Colab.
+\newcommand{\sc@colabbase}{colab.research.google.com/github/MaheshRavishankar/sc26_tutorial/blob/main/}
+\newcommand{\colabnotebook}[1]{%
+  \par\vspace{0.8em}
+  \begin{center}
+    \begin{minipage}{11.4cm}
+      {\large\textbf{Open the notebook in Colab:}}\\[0.5em]
+      {\normalsize
+        \begin{tabular}{@{}l@{\hspace{0.6em}}l@{}}
+          Repository: & \href{https://github.com/MaheshRavishankar/sc26_tutorial}%
+            {\color{scblue}\ttfamily github.com/MaheshRavishankar/sc26\_tutorial} \\[0.2em]
+          Notebook: & \href{https://\sc@colabbase #1}%
+            {\color{scblue}\ttfamily\detokenize{#1}} \\
+        \end{tabular}\par}
+    \end{minipage}
+  \end{center}}
+
 % --- Colab cell pointers --------------------------------------------------
 % \colab{1.12} or \colab<5>{1.20--1.23}, anywhere in a frame: a small tag at
 % the bottom left, opposite the frame number, naming the notebook cells to run
