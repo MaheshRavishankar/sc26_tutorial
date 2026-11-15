@@ -20,14 +20,10 @@
 % =======================================================================
 \begin{frame}{Setup}
   \begin{itemize}
-    \item<1-> \textbf{Switch the runtime to a GPU:}
+    \item \textbf{Switch the runtime to a GPU:}
       \cd{Change runtime type $\to$ T4 GPU}, before running any cell.
-    \item<2-> \textbf{It is a fresh runtime.} Nothing from Part 1 carries
-      over, so the notebook downloads the toolchain again.
-    \item<3-> \textbf{The exercise edits one MLIR file, a schedule,} as in Part 1: edit,
-      save, re-run the cell. No C++.
-    \item<4-> \textbf{One exercise:} distribute matmul along its columns too.
   \end{itemize}
+  \colab{4.2--4.10}
 \end{frame}
 
 % =======================================================================
@@ -98,6 +94,7 @@ module {
       Session 1 Part 2's kernel. Boilerplate: we leave it there.
     \item<3-> The op is Part 1's \cd{linalg.matvec}, unchanged.
   \end{itemize}
+  \colab{4.12, 4.14}
 \end{frame}
 
 % =======================================================================
@@ -227,6 +224,7 @@ module attributes {transform.with_named_sequence} {
     \item<5-> \cd{\%block\_op} is the op inside the blocks: the first step
       returns it, and the second tiles it.
   \end{itemize}
+  \colab{4.16, 4.18}
 \end{frame}
 
 % =======================================================================
@@ -290,6 +288,7 @@ module attributes {transform.with_named_sequence} {
     \item<5-> Inside, the original \cd{linalg.matvec}, on that one row. Still
       Linalg: the next step lowers it.
   \end{itemize}
+  \colab{4.20}
 \end{frame}
 
 % =======================================================================
@@ -315,6 +314,7 @@ module attributes {transform.with_named_sequence} {
   \end{itemize}
   \vspace{0.2em}
   \visible<5->{\begin{center}\color{scgreen}\large\ttfamily OK\end{center}}
+  \colab{4.22}
 \end{frame}
 
 % =======================================================================
@@ -368,6 +368,7 @@ linalg.matmul ins(%subview_9, %subview_10 : memref<1x512xf32, ...>, memref<512x2
     \item<3-> The exercise: distribute \cd{j} too, so that each thread
       computes one \cd{c[i, j]}, with the columns on x and the rows on y.
   \end{itemize}
+  \colab{4.24, 4.25}
 \end{frame}
 
 % =======================================================================
@@ -438,6 +439,7 @@ module attributes {transform.with_named_sequence} {
       second, on x.
     \item<4-> Each block is 32 $\times$ 32 threads.
   \end{itemize}
+  \colab{4.27, 4.28}
 \end{frame}
 
 % =======================================================================
@@ -474,6 +476,7 @@ module attributes {transform.with_named_sequence} {
     \item<5-> Lowered, that is 512 iterations of \cd{k}. Run, and checked
       against numpy: \visible<5->{{\color{scgreen}\ttfamily OK}}
   \end{itemize}
+  \colab<1-4>{4.30, 4.32}\colab<5->{4.34}
 \end{frame}
 
 % =======================================================================
